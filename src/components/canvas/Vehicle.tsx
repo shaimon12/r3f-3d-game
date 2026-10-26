@@ -73,11 +73,10 @@ export function Vehicle({
     [wheelFL, wheelFR, wheelRL, wheelRR]
   );
 
-  // High-performance sports car suspension & wheel configuration
+  // Standard Raycast Vehicle suspension & wheel configuration
   const wheelRadius = 0.34;
-  // Increased suspension rest length slightly so chassis clears the asphalt with ample ground clearance
-  const suspensionRestLength = 0.36;
-  const connectionY = 0.38;
+  const suspensionRestLength = 0.25;
+  const connectionY = 0.40; // Elevated wheel attachment point ensuring chassis clears ground
 
   // Wheel attachment points in local coordinates
   const wheelPositions = useMemo(
@@ -90,12 +89,12 @@ export function Vehicle({
     []
   );
 
-  // Initialize Rapier Vehicle Controller
+  // Initialize Standard Rapier Vehicle Controller
   useEffect(() => {
     const chassis = chassisRigidBodyRef.current;
     if (!chassis) return;
 
-    // Create the vehicle controller on the chassis rigid body
+    // Create the standard raycast vehicle controller on the chassis rigid body
     const controller = world.createVehicleController(chassis);
     controller.setIndexForwardAxis = 2; // Z-axis forward
 
@@ -106,30 +105,14 @@ export function Vehicle({
       controller.addWheel(pos, downDir, axleDir, suspensionRestLength, wheelRadius);
     });
 
+    // Standard baseline vehicle suspension parameters: stable, compliant, and well-damped
     for (let i = 0; i < 4; i++) {
-      // Balanced, planted GT suspension supporting the car with generous travel
-      controller.setWheelSuspensionStiffness(i, 105.0);
+      controller.setWheelSuspensionStiffness(i, 32.0);
       controller.setWheelMaxSuspensionTravel(i, 0.25);
-      // High asphalt friction grip to maintain traction without spinning out
-      controller.setWheelFrictionSlip(i, 10.5);
-      controller.setWheelSuspensionCompression(i, 12.0);
-      controller.setWheelSuspensionRelaxation(i, 8.5);
+      controller.setWheelFrictionSlip(i, 3.2);
+      controller.setWheelSuspensionCompression(i, 2.8);
+      controller.setWheelSuspensionRelaxation(i, 2.2);
     }
-
-    // Raise the center of mass back to the middle of the vehicle mesh so it stops clipping the ground
-    const numColliders = chassis.numColliders();
-    for (let i = 0; i < numColliders; i++) {
-      const col = chassis.collider(i);
-      if (col) {
-        col.setMassProperties(
-          1900,
-          new RAPIER.Vector3(0, 0, 0), // Centered in the middle of the vehicle mesh collider
-          new RAPIER.Vector3(1200, 1500, 2200),
-          new RAPIER.Quaternion(0, 0, 0, 1)
-        );
-      }
-    }
-    chassis.recomputeMassPropertiesFromColliders();
 
     vehicleControllerRef.current = controller;
 
@@ -215,10 +198,10 @@ export function Vehicle({
     }
 
     // IGNORE STANDARD SUSPENSION BOUNCES, ASPHALT SCRAPES & GROUND CONTACT:
-    // If contact normal is predominantly vertical (|normalY| > 0.45), the contact is with
+    // If contact normal is predominantly vertical (|normalY| > 0.35), the contact is with
     // the road surface, ground plane, or curb top face. Ignore completely.
-    // True crash impacts with tire barriers/walls are predominantly horizontal (|normalY| <= 0.45).
-    if (hasNormal && Math.abs(normalY) > 0.45) {
+    // True crash impacts with tire barriers/walls are predominantly horizontal (|normalY| <= 0.35).
+    if (!hasNormal || Math.abs(normalY) > 0.35) {
       return;
     }
 
@@ -226,12 +209,9 @@ export function Vehicle({
     const linvel = chassis.linvel();
 
     // Normal velocity component directed into the barrier/wall surface
-    let normalSpeed = 0;
-    if (hasNormal) {
-      normalSpeed = Math.abs(linvel.x * normalX + linvel.y * normalY + linvel.z * normalZ);
-    } else {
-      // Fallback: horizontal speed
-      normalSpeed = Math.sqrt(linvel.x ** 2 + linvel.z ** 2);
+    const normalSpeed = Math.abs(linvel.x * normalX + linvel.z * normalZ);
+    if (normalSpeed < 4.0) {
+      return;
     }
 
     // Check contact impulse from solver if available
@@ -246,16 +226,16 @@ export function Vehicle({
       maxSolverImpulse = 0;
     }
 
-    // Vehicle mass = 1900 kg. Calculate impact impulse force: J = m * deltaV_normal
-    const vehicleMass = 1900;
+    // Vehicle mass = 1200 kg. Calculate impact impulse force: J = m * deltaV_normal
+    const vehicleMass = 1200;
     const kinematicImpulse = vehicleMass * normalSpeed;
     const totalImpactForce = Math.max(kinematicImpulse, maxSolverImpulse);
 
     // TRIGGER CAMERA SHAKE ON WALL COLLISION:
-    // When the car strikes a wall or perimeter barrier (>3 m/s horizontal speed), trigger camera shake
-    if (vehicleStateRef && normalSpeed > 3.0 && totalImpactForce > 10000) {
+    // When the car strikes a wall or perimeter barrier (>4 m/s horizontal speed), trigger camera shake
+    if (vehicleStateRef && totalImpactForce > 12000) {
       const shakeIntensity = THREE.MathUtils.clamp(
-        0.35 + (totalImpactForce / 60000) * 0.65,
+        0.35 + (totalImpactForce / 50000) * 0.65,
         0.35,
         1.0
       );
@@ -263,10 +243,8 @@ export function Vehicle({
     }
 
     // HIGH-VELOCITY WALL IMPACT THRESHOLD:
-    // Increased to 26,000 N*s (requires at least ~14 m/s or 31 mph direct impact into a barrier).
-    // Standard suspension bounces and mild grazing are completely ignored.
-    const minThreshold = 26000;
-    const maxForceScale = 75000; // Force of severe ~70+ mph head-on barrier crash
+    const minThreshold = 20000;
+    const maxForceScale = 65000; // Force of severe head-on barrier crash
 
     if (totalImpactForce > minThreshold) {
       lastCrashTimestamp.current = now;
@@ -298,11 +276,11 @@ export function Vehicle({
     }
   };
 
-  // Driving parameters
+  // Standard baseline driving parameters
   const steerAngleRef = useRef(0);
-  const maxEngineForce = 62000; // Increased by >600% to overpower damping and achieve 150+ mph
-  const boostMultiplier = 1.60; // Delivers ~99,200 N under nitrous boost
-  const maxBrakeForce = 1400; // Scaled braking force for high-speed deceleration
+  const maxEngineForce = 3800; // Balanced realistic engine force providing stable ~1.2G acceleration
+  const boostMultiplier = 1.45;
+  const maxBrakeForce = 120; // Smooth deceleration without locked-wheel skips
 
   const spawnPos = useRef(position);
 
@@ -414,15 +392,6 @@ export function Vehicle({
     controller.setWheelSteering(0, steerAngleRef.current);
     controller.setWheelSteering(1, steerAngleRef.current);
 
-    // 2. Artificial Aerodynamic Downforce in useFrame loop (capped at safe limit):
-    // Continuous downward force (negative Y vector) scaling proportionally with velocity
-    // Capped at a safe maximum (3,500 N) so the vehicle stays planted without crushing into the floor
-    if (chassisRigidBodyRef.current && speedMs > 1.0) {
-      const maxSafeDownforce = 3500;
-      const downforce = THREE.MathUtils.clamp(speedMs * 45, 0, maxSafeDownforce);
-      chassisRigidBodyRef.current.addForce({ x: 0, y: -downforce, z: 0 }, true);
-    }
-
     // Update target position and full orientation state for cinematic camera tracking
     if (chassisRigidBodyRef.current) {
       const t = chassisRigidBodyRef.current.translation();
@@ -524,9 +493,7 @@ export function Vehicle({
       wheelRollRef.current[idx] += rollRate * delta;
 
       const suspLength = controller.wheelSuspensionLength(idx) ?? suspensionRestLength;
-      const defaultY = 0.34;
-      const travelDelta = suspensionRestLength - suspLength;
-      wheel.position.y = defaultY + travelDelta;
+      wheel.position.y = connectionY - suspLength;
 
       if (idx === 0 || idx === 1) {
         wheel.rotation.y = controller.wheelSteering(idx) ?? 0;
@@ -545,22 +512,15 @@ export function Vehicle({
       type="dynamic"
       canSleep={false}
       ccd={true}
-      linearDamping={0.50}
-      angularDamping={7.0}
+      linearDamping={0.15}
+      angularDamping={0.5}
       onCollisionEnter={handleCollision}
     >
-      {/* Explicitly defined vehicle hitbox scaled 5% larger than the visual 3D mesh */}
-      {/* Visual mesh dimensions: W: 2.23m, H: 1.172m (from y=0.20 to 1.372m), L: 4.91m */}
-      {/* Center of mass raised back to the middle of the vehicle mesh with elevated clearance */}
+      {/* Standard rigid body hitbox: elevated above asphalt to eliminate floor clipping */}
       <CuboidCollider
-        args={[1.171, 0.58, 2.578]}
-        position={[0, 0.82, -0.02]}
-        massProperties={{
-          mass: 1900,
-          centerOfMass: { x: 0, y: 0, z: 0 },
-          principalAngularInertia: { x: 1200, y: 1500, z: 2200 },
-          angularInertiaLocalFrame: { x: 0, y: 0, z: 0, w: 1 },
-        }}
+        args={[1.02, 0.55, 2.30]}
+        position={[0, 0.70, 0]}
+        mass={1200}
         friction={0.4}
         restitution={0.05}
       />
