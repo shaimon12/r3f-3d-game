@@ -52,9 +52,9 @@ export function App() {
         {/* Dynamic Follow / Free Orbit Camera Controller */}
         <CameraController mode={cameraMode} targetPosRef={vehiclePosRef} />
 
-        {/* Rapier Physics Simulation */}
+        {/* Rapier Physics Simulation with variable timeStep to eliminate physics jitter */}
         <Suspense fallback={null}>
-          <Physics gravity={[0, -9.81, 0]}>
+          <Physics gravity={[0, -9.81, 0]} timeStep="vary">
             {/* 500x500 Ground Plane with 4 Invisible Perimeter Boundary Walls */}
             <Ground size={[500, 500]} color="#141820" gridColor="#232d3d" />
 

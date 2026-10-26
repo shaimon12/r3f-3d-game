@@ -27,7 +27,7 @@ export const HUD: React.FC<HUDProps> = ({ speedMph, cameraMode, onToggleCamera }
           />
         </div>
         <div className="vehicle-caption">
-          Toyota Camry XV30 • 500x500 Stunt Circuit
+          Apex GT Hypercar • 500x500 Stunt Circuit
         </div>
       </div>
 

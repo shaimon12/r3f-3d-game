@@ -30,7 +30,7 @@ export function Vehicle({
   const { world } = useRapier();
   const { controlsRef } = useKeyboardControls();
 
-  // Load the generated Toyota Camry GLB model
+  // Load the new Sleek Aerodynamic Sports Car GLB model
   const { scene } = useGLTF('/models/car.glb');
 
   // Clone scene so materials/instances are completely isolated
@@ -53,18 +53,18 @@ export function Vehicle({
     return { chassisNode, wheelFL, wheelFR, wheelRL, wheelRR };
   }, [clonedScene]);
 
-  // Suspension & wheel configuration
-  const wheelRadius = 0.33;
-  const suspensionRestLength = 0.25;
-  const connectionY = 0.45; // Connection height adjusted for lowered center of mass
+  // High-performance sports car suspension & wheel configuration
+  const wheelRadius = 0.34;
+  const suspensionRestLength = 0.28;
+  const connectionY = 0.35; // Connection point tuned for low center-of-mass & ample ramp clearance
 
-  // Wheel attachment points in local coordinates
+  // Wheel attachment points in local coordinates (wide sports car track)
   const wheelPositions = useMemo(
     () => [
-      new RAPIER.Vector3(-0.84, connectionY, -1.38), // Front Left (0)
-      new RAPIER.Vector3(0.84, connectionY, -1.38),  // Front Right (1)
-      new RAPIER.Vector3(-0.84, connectionY, 1.38),  // Rear Left (2)
-      new RAPIER.Vector3(0.84, connectionY, 1.38),   // Rear Right (3)
+      new RAPIER.Vector3(-0.92, connectionY, -1.36), // Front Left (0)
+      new RAPIER.Vector3( 0.92, connectionY, -1.36), // Front Right (1)
+      new RAPIER.Vector3(-0.94, connectionY,  1.36), // Rear Left (2)
+      new RAPIER.Vector3( 0.94, connectionY,  1.36), // Rear Right (3)
     ],
     []
   );
@@ -86,12 +86,12 @@ export function Vehicle({
     });
 
     for (let i = 0; i < 4; i++) {
-      // Enhanced stiffness & damping for high-speed stability and smooth ramp landings
-      controller.setWheelSuspensionStiffness(i, 62.0);
-      controller.setWheelMaxSuspensionTravel(i, 0.28);
-      controller.setWheelFrictionSlip(i, 3.4);
-      controller.setWheelSuspensionCompression(i, 4.8);
-      controller.setWheelSuspensionRelaxation(i, 2.6);
+      // Racing suspension: firm spring stiffness, high grip friction slip
+      controller.setWheelSuspensionStiffness(i, 68.0);
+      controller.setWheelMaxSuspensionTravel(i, 0.30);
+      controller.setWheelFrictionSlip(i, 4.0);
+      controller.setWheelSuspensionCompression(i, 5.2);
+      controller.setWheelSuspensionRelaxation(i, 3.0);
     }
 
     vehicleControllerRef.current = controller;
@@ -104,12 +104,12 @@ export function Vehicle({
     };
   }, [world, wheelPositions]);
 
-  // Dynamic driving state: +30% engine force increased from 3400 to 4420
+  // Tuned driving parameters: DOUBLED engine force to 8840 N so it easily clears the inclines
   const steerAngleRef = useRef(0);
-  const maxSteerAngle = 0.52; // ~30 degrees
-  const maxEngineForce = 4420; // +30% power (was 3400)
-  const boostMultiplier = 1.65;
-  const maxBrakeForce = 180;
+  const maxSteerAngle = 0.50; // High-speed sports car steering ratio
+  const maxEngineForce = 8840; // DOUBLED (was 4420)
+  const boostMultiplier = 1.70; // 15,000 N Turbo
+  const maxBrakeForce = 220; // High-performance racing brakes
 
   // Initial spawn position memory for reset
   const spawnPos = useRef(position);
@@ -137,8 +137,8 @@ export function Vehicle({
     if (left) targetSteer += maxSteerAngle;
     if (right) targetSteer -= maxSteerAngle;
 
-    // Smooth steering response speed
-    const steerSpeed = 9.0;
+    // Dynamic steering speed: smooth and precise at high speeds
+    const steerSpeed = 10.0;
     steerAngleRef.current = THREE.MathUtils.lerp(
       steerAngleRef.current,
       targetSteer,
@@ -156,7 +156,7 @@ export function Vehicle({
     const enginePower = boost ? maxEngineForce * boostMultiplier : maxEngineForce;
 
     if (forward) {
-      // Accelerating forward
+      // Accelerating forward - apply full power to all 4 wheels
       for (let i = 0; i < 4; i++) {
         controller.setWheelEngineForce(i, enginePower);
         controller.setWheelBrake(i, 0);
@@ -171,7 +171,7 @@ export function Vehicle({
       } else {
         // Reverse gear
         for (let i = 0; i < 4; i++) {
-          controller.setWheelEngineForce(i, -enginePower * 0.6);
+          controller.setWheelEngineForce(i, -enginePower * 0.55);
           controller.setWheelBrake(i, 0);
         }
       }
@@ -179,11 +179,11 @@ export function Vehicle({
       // Rolling friction / coasting
       for (let i = 0; i < 4; i++) {
         controller.setWheelEngineForce(i, 0);
-        controller.setWheelBrake(i, 4.0);
+        controller.setWheelBrake(i, 5.0);
       }
     }
 
-    // Handbrake (Space) - Locks rear wheels
+    // Handbrake (Space) - Locks rear wheels for power slides
     if (handbrake) {
       controller.setWheelBrake(2, maxBrakeForce * 2.5);
       controller.setWheelBrake(3, maxBrakeForce * 2.5);
@@ -225,7 +225,7 @@ export function Vehicle({
 
       // Local suspension displacement
       const suspLength = controller.wheelSuspensionLength(idx) ?? suspensionRestLength;
-      const defaultY = 0.33;
+      const defaultY = 0.34;
       const travelDelta = suspensionRestLength - suspLength;
       wheel.position.y = defaultY + travelDelta;
 
@@ -247,30 +247,46 @@ export function Vehicle({
       colliders={false}
       type="dynamic"
       canSleep={false}
-      // Reduced linear damping to unlock +30% higher top speed
-      linearDamping={0.32}
-      // Increased angular damping to stabilize rotation in air and high-G turns
-      angularDamping={2.6}
+      // Low linear damping for blazing speed on straightaways and inclines
+      linearDamping={0.22}
+      // High angular damping for flight stabilization and smooth ramp landings
+      angularDamping={2.8}
     >
-      {/* Lowered Main Body Collider (centered at Y = 0.30 instead of 0.55) */}
+      {/* 
+        High-Clearance, Low-Center-of-Mass Multi-Collider Design:
+        1. Central tub between axles (bottom at Y = 0.22m, mass = 1200kg)
+        2. Elevated front nose with high approach angle clearance (bottom at Y = 0.33m, mass = 350kg)
+        3. Elevated rear tail with high departure clearance (bottom at Y = 0.32m, mass = 350kg)
+        Total Mass: 1900 kg (increased from 1400kg). Center of mass sits low, preventing flips & bottoming out!
+      */}
+      {/* Central Chassis Tub */}
       <CuboidCollider
-        args={[0.91, 0.30, 2.3]}
-        position={[0, 0.30, 0]}
-        density={220}
-        friction={0.5}
-        restitution={0.05}
-      />
-
-      {/* Low-Center-of-Gravity Floor Ballast: Places majority of mass near the floorpan (Y = 0.12) to prevent roll-overs */}
-      <CuboidCollider
-        args={[0.85, 0.08, 2.1]}
-        position={[0, 0.12, 0]}
-        mass={800}
-        friction={0.6}
+        args={[0.85, 0.16, 1.3]}
+        position={[0, 0.38, 0]}
+        mass={1200}
+        friction={0.4}
         restitution={0.02}
       />
 
-      {/* 3D Car Model Visuals */}
+      {/* Elevated Front Nose (High approach angle clearance prevents ramp snagging!) */}
+      <CuboidCollider
+        args={[0.75, 0.12, 0.6]}
+        position={[0, 0.45, -1.6]}
+        mass={350}
+        friction={0.3}
+        restitution={0.02}
+      />
+
+      {/* Elevated Rear Tail */}
+      <CuboidCollider
+        args={[0.80, 0.14, 0.6]}
+        position={[0, 0.46, 1.6]}
+        mass={350}
+        friction={0.3}
+        restitution={0.02}
+      />
+
+      {/* 3D Sports Car Model Visuals */}
       {chassisNode && <primitive object={chassisNode} />}
       {wheelFL && <primitive object={wheelFL} />}
       {wheelFR && <primitive object={wheelFR} />}
@@ -280,7 +296,7 @@ export function Vehicle({
   );
 }
 
-// Pre-load the car GLTF
+// Pre-load the sports car GLTF
 useGLTF.preload('/models/car.glb');
 
 export default Vehicle;
