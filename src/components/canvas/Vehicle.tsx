@@ -106,14 +106,31 @@ export function Vehicle({
     });
 
     for (let i = 0; i < 4; i++) {
-      // Ultra-stiff, planted racing suspension to keep car grounded at 150+ mph
-      controller.setWheelSuspensionStiffness(i, 240.0);
-      controller.setWheelMaxSuspensionTravel(i, 0.12);
+      // Soften suspension stiffness so the car absorbs track bumps instead of launching off them
+      controller.setWheelSuspensionStiffness(i, 88.0);
+      controller.setWheelMaxSuspensionTravel(i, 0.28);
       // High asphalt friction grip to maintain traction without spinning out
-      controller.setWheelFrictionSlip(i, 12.5);
-      controller.setWheelSuspensionCompression(i, 14.0);
-      controller.setWheelSuspensionRelaxation(i, 9.5);
+      controller.setWheelFrictionSlip(i, 11.5);
+      // Significantly increase suspension damping (compression & relaxation) to absorb bump energy
+      controller.setWheelSuspensionCompression(i, 22.0);
+      controller.setWheelSuspensionRelaxation(i, 18.0);
     }
+
+    // Lower the RigidBody center of mass significantly on the Y-axis (-0.45m)
+    // to eliminate roll/pitch moments and keep the car suctioned to the road
+    const numColliders = chassis.numColliders();
+    for (let i = 0; i < numColliders; i++) {
+      const col = chassis.collider(i);
+      if (col) {
+        col.setMassProperties(
+          1900,
+          new RAPIER.Vector3(0, -0.45, 0),
+          new RAPIER.Vector3(1200, 1500, 2200),
+          new RAPIER.Quaternion(0, 0, 0, 1)
+        );
+      }
+    }
+    chassis.recomputeMassPropertiesFromColliders();
 
     vehicleControllerRef.current = controller;
 
@@ -358,6 +375,14 @@ export function Vehicle({
       controller.setWheelBrake(3, maxBrakeForce * 2.5);
     }
 
+    // Continuous aerodynamic downforce: apply negative Y vector scaling with velocity to keep car planted
+    const currentPhysicsSpeed = controller.currentVehicleSpeed();
+    const physicsSpeedMs = Number.isFinite(currentPhysicsSpeed) ? Math.abs(currentPhysicsSpeed) : 0;
+    if (physicsSpeedMs > 1.0) {
+      const downforce = THREE.MathUtils.clamp(physicsSpeedMs * 350 + (physicsSpeedMs * physicsSpeedMs) * 9.5, 0, 85000);
+      chassis.addForce({ x: 0, y: -downforce, z: 0 }, true);
+    }
+
     controller.updateVehicle(stepWorld.timestep);
   });
 
@@ -397,6 +422,14 @@ export function Vehicle({
     // Apply smoothed steering angle directly to the vehicle controller front wheels
     controller.setWheelSteering(0, steerAngleRef.current);
     controller.setWheelSteering(1, steerAngleRef.current);
+
+    // 2. Artificial Aerodynamic Downforce in useFrame loop:
+    // Calculates forward velocity and applies a continuous downward force (negative Y vector)
+    // that scales proportionally with speed to keep the vehicle suctioned and planted on the track
+    if (chassisRigidBodyRef.current && speedMs > 1.0) {
+      const downforce = THREE.MathUtils.clamp(speedMs * 350 + (speedMs * speedMs) * 9.5, 0, 85000);
+      chassisRigidBodyRef.current.addForce({ x: 0, y: -downforce, z: 0 }, true);
+    }
 
     // Update target position and full orientation state for cinematic camera tracking
     if (chassisRigidBodyRef.current) {
@@ -526,12 +559,16 @@ export function Vehicle({
     >
       {/* Explicitly defined vehicle hitbox scaled 5% larger than the visual 3D mesh */}
       {/* Visual mesh dimensions: W: 2.23m, H: 1.172m (from y=0.20 to 1.372m), L: 4.91m */}
-      {/* +5% dimensions: W: 2.342m (half: 1.171), H: 1.23m (half: 0.615), L: 5.156m (half: 2.578) */}
-      {/* Ensures the invisible hitbox strikes walls/obstacles before the visual model does, preventing clipping */}
+      {/* Lowered center of mass significantly on Y-axis (-0.45m) for planted ground-effect physics */}
       <CuboidCollider
         args={[1.171, 0.615, 2.578]}
         position={[0, 0.79, -0.02]}
-        mass={1900}
+        massProperties={{
+          mass: 1900,
+          centerOfMass: { x: 0, y: -0.45, z: 0 },
+          principalAngularInertia: { x: 1200, y: 1500, z: 2200 },
+          angularInertiaLocalFrame: { x: 0, y: 0, z: 0, w: 1 },
+        }}
         friction={0.4}
         restitution={0.05}
       />
