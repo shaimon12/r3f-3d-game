@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { useGLTF } from '@react-three/drei';
+import { useGLTF, PositionalAudio } from '@react-three/drei';
 import {
   useRapier,
   useBeforePhysicsStep,
@@ -33,7 +33,11 @@ export function Vehicle({
   const { world } = useRapier();
   const { controlsRef } = useKeyboardControls();
 
-  // Load the new Sleek Aerodynamic Sports Car GLB model
+  // Spatial Audio Refs
+  const engineAudioRef = useRef<THREE.PositionalAudio>(null);
+  const skidAudioRef = useRef<THREE.PositionalAudio>(null);
+
+  // Load the Sleek Aerodynamic Sports Car GLB model
   const { scene } = useGLTF('/models/car.glb');
 
   // Clone scene so materials/instances are completely isolated
@@ -59,9 +63,9 @@ export function Vehicle({
   // High-performance sports car suspension & wheel configuration
   const wheelRadius = 0.34;
   const suspensionRestLength = 0.28;
-  const connectionY = 0.35; // Connection point tuned for low center-of-mass & ample ramp clearance
+  const connectionY = 0.35;
 
-  // Wheel attachment points in local coordinates (wide sports car track)
+  // Wheel attachment points in local coordinates
   const wheelPositions = useMemo(
     () => [
       new RAPIER.Vector3(-0.92, connectionY, -1.36), // Front Left (0)
@@ -89,7 +93,6 @@ export function Vehicle({
     });
 
     for (let i = 0; i < 4; i++) {
-      // Racing suspension: firm spring stiffness, high grip friction slip
       controller.setWheelSuspensionStiffness(i, 68.0);
       controller.setWheelMaxSuspensionTravel(i, 0.30);
       controller.setWheelFrictionSlip(i, 4.0);
@@ -107,12 +110,49 @@ export function Vehicle({
     };
   }, [world, wheelPositions]);
 
-  // Tuned driving parameters: DOUBLED engine force to 8840 N so it easily clears the inclines
+  // Browser Autoplay Policy: resume audio context and start engine sound on first user action
+  useEffect(() => {
+    const handleUserInteraction = () => {
+      // Resume and start continuous engine audio loop
+      if (engineAudioRef.current) {
+        const ctx = engineAudioRef.current.context;
+        if (ctx && ctx.state === 'suspended') {
+          ctx.resume();
+        }
+        if (!engineAudioRef.current.isPlaying) {
+          engineAudioRef.current.setVolume(0.45);
+          engineAudioRef.current.play();
+        }
+      }
+
+      // Resume skid audio context (kept muted until drift threshold is breached)
+      if (skidAudioRef.current) {
+        const ctx = skidAudioRef.current.context;
+        if (ctx && ctx.state === 'suspended') {
+          ctx.resume();
+        }
+        if (!skidAudioRef.current.isPlaying) {
+          skidAudioRef.current.setVolume(0);
+          skidAudioRef.current.play();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleUserInteraction, { once: true });
+    window.addEventListener('pointerdown', handleUserInteraction, { once: true });
+
+    return () => {
+      window.removeEventListener('keydown', handleUserInteraction);
+      window.removeEventListener('pointerdown', handleUserInteraction);
+    };
+  }, []);
+
+  // Tuned driving parameters
   const steerAngleRef = useRef(0);
-  const maxSteerAngle = 0.50; // High-speed sports car steering ratio
-  const maxEngineForce = 8840; // DOUBLED (was 4420)
-  const boostMultiplier = 1.70; // 15,000 N Turbo
-  const maxBrakeForce = 220; // High-performance racing brakes
+  const maxSteerAngle = 0.50;
+  const maxEngineForce = 8840; // Doubled engine force
+  const boostMultiplier = 1.70;
+  const maxBrakeForce = 220;
 
   // Initial spawn position memory for reset
   const spawnPos = useRef(position);
@@ -140,7 +180,6 @@ export function Vehicle({
     if (left) targetSteer += maxSteerAngle;
     if (right) targetSteer -= maxSteerAngle;
 
-    // Dynamic steering speed: smooth and precise at high speeds
     const steerSpeed = 10.0;
     steerAngleRef.current = THREE.MathUtils.lerp(
       steerAngleRef.current,
@@ -148,55 +187,45 @@ export function Vehicle({
       stepWorld.timestep * steerSpeed
     );
 
-    // Apply steering to front wheels (0 = FL, 1 = FR)
     controller.setWheelSteering(0, steerAngleRef.current);
     controller.setWheelSteering(1, steerAngleRef.current);
 
-    // Vehicle forward speed (m/s along forward axis)
     const currentSpeed = controller.currentVehicleSpeed();
-
-    // Throttle & Brake logic (W / S)
     const enginePower = boost ? maxEngineForce * boostMultiplier : maxEngineForce;
 
     if (forward) {
-      // Accelerating forward - apply full power to all 4 wheels
       for (let i = 0; i < 4; i++) {
         controller.setWheelEngineForce(i, enginePower);
         controller.setWheelBrake(i, 0);
       }
     } else if (backward) {
-      // If moving forward at speed, apply brakes
       if (currentSpeed < -1.0) {
         for (let i = 0; i < 4; i++) {
           controller.setWheelEngineForce(i, 0);
           controller.setWheelBrake(i, maxBrakeForce);
         }
       } else {
-        // Reverse gear
         for (let i = 0; i < 4; i++) {
           controller.setWheelEngineForce(i, -enginePower * 0.55);
           controller.setWheelBrake(i, 0);
         }
       }
     } else {
-      // Rolling friction / coasting
       for (let i = 0; i < 4; i++) {
         controller.setWheelEngineForce(i, 0);
         controller.setWheelBrake(i, 5.0);
       }
     }
 
-    // Handbrake (Space) - Locks rear wheels for power slides
     if (handbrake) {
       controller.setWheelBrake(2, maxBrakeForce * 2.5);
       controller.setWheelBrake(3, maxBrakeForce * 2.5);
     }
 
-    // Update Rapier vehicle physics
     controller.updateVehicle(stepWorld.timestep);
   });
 
-  // Render loop: Synchronize wheel meshes and camera
+  // Render loop: Synchronize wheel meshes, telemetry, and dynamic spatial audio
   const wheelRollRef = useRef([0, 0, 0, 0]);
 
   useFrame((_, delta) => {
@@ -226,6 +255,54 @@ export function Vehicle({
       }
     }
 
+    // ==========================================
+    // SPATIAL AUDIO PROCESSING
+    // ==========================================
+    // 1. Continuous Engine Loop: Dynamic pitch scaling based on current velocity
+    if (engineAudioRef.current) {
+      // Base idle pitch is 0.85, scaling smoothly up to ~2.35 at top speed
+      const targetPitch = 0.85 + Math.min(speedMph / 50, 1.5);
+      const currentPitch = engineAudioRef.current.playbackRate;
+      const newPitch = THREE.MathUtils.lerp(currentPitch, targetPitch, delta * 5.0);
+      engineAudioRef.current.setPlaybackRate(newPitch);
+
+      // Dynamic volume: louder under throttle or high velocity
+      const isThrottling = controlsRef.current.forward || controlsRef.current.backward;
+      const targetVolume = isThrottling
+        ? 0.75 + Math.min(speedMph / 140, 0.25)
+        : 0.35 + Math.min(speedMph / 140, 0.25);
+      const currentVol = engineAudioRef.current.getVolume();
+      engineAudioRef.current.setVolume(THREE.MathUtils.lerp(currentVol, targetVolume, delta * 4.0));
+    }
+
+    // 2. Secondary Tire-Screeching Sound Effect: Triggers on high angular velocity (drifting)
+    if (skidAudioRef.current && chassisRigidBodyRef.current) {
+      const angvel = chassisRigidBodyRef.current.angvel();
+      const yawSpeed = Math.abs(angvel.y); // Angular velocity around Y-axis (rad/s)
+      const driftThreshold = 1.15; // Threshold in rad/s
+
+      const isHandbrakeSlide = controlsRef.current.handbrake && speedMs > 3.0;
+      const isDrifting = (yawSpeed > driftThreshold && speedMs > 4.5) || isHandbrakeSlide;
+
+      let targetSkidVolume = 0;
+      if (isDrifting) {
+        if (!skidAudioRef.current.isPlaying) {
+          skidAudioRef.current.play();
+        }
+        // Scale screech volume and pitch based on drift severity
+        const driftSeverity = isHandbrakeSlide ? 0.9 : Math.min(1.0, (yawSpeed - driftThreshold) / 1.3);
+        targetSkidVolume = 0.25 + driftSeverity * 0.65; // Volume up to 0.90
+
+        const skidPitch = 0.95 + driftSeverity * 0.35;
+        skidAudioRef.current.setPlaybackRate(skidPitch);
+      }
+
+      // Smooth volume fade-in and fade-out to prevent audio clicking
+      const currentSkidVol = skidAudioRef.current.getVolume();
+      const fadeSpeed = isDrifting ? 12.0 : 7.0;
+      skidAudioRef.current.setVolume(THREE.MathUtils.lerp(currentSkidVol, targetSkidVolume, delta * fadeSpeed));
+    }
+
     // Update wheel mesh visual transforms
     const wheels = [wheelFL, wheelFR, wheelRL, wheelRR];
     const rollRate = -controller.currentVehicleSpeed() / wheelRadius;
@@ -233,21 +310,17 @@ export function Vehicle({
     wheels.forEach((wheel, idx) => {
       if (!wheel) return;
 
-      // Update roll angle around axle
       wheelRollRef.current[idx] += rollRate * delta;
 
-      // Local suspension displacement
       const suspLength = controller.wheelSuspensionLength(idx) ?? suspensionRestLength;
       const defaultY = 0.34;
       const travelDelta = suspensionRestLength - suspLength;
       wheel.position.y = defaultY + travelDelta;
 
-      // Front wheels steering
       if (idx === 0 || idx === 1) {
         wheel.rotation.y = controller.wheelSteering(idx) ?? 0;
       }
 
-      // Wheel spinning rotation
       wheel.rotation.x = wheelRollRef.current[idx];
     });
   });
@@ -260,19 +333,10 @@ export function Vehicle({
       colliders={false}
       type="dynamic"
       canSleep={false}
-      // Low linear damping for blazing speed on straightaways and inclines
       linearDamping={0.22}
-      // High angular damping for flight stabilization and smooth ramp landings
       angularDamping={2.8}
     >
-      {/* 
-        High-Clearance, Low-Center-of-Mass Multi-Collider Design:
-        1. Central tub between axles (bottom at Y = 0.22m, mass = 1200kg)
-        2. Elevated front nose with high approach angle clearance (bottom at Y = 0.33m, mass = 350kg)
-        3. Elevated rear tail with high departure clearance (bottom at Y = 0.32m, mass = 350kg)
-        Total Mass: 1900 kg (increased from 1400kg). Center of mass sits low, preventing flips & bottoming out!
-      */}
-      {/* Central Chassis Tub */}
+      {/* Central Chassis Tub Collider */}
       <CuboidCollider
         args={[0.85, 0.16, 1.3]}
         position={[0, 0.38, 0]}
@@ -281,7 +345,7 @@ export function Vehicle({
         restitution={0.02}
       />
 
-      {/* Elevated Front Nose (High approach angle clearance prevents ramp snagging!) */}
+      {/* Elevated Front Nose Collider */}
       <CuboidCollider
         args={[0.75, 0.12, 0.6]}
         position={[0, 0.45, -1.6]}
@@ -290,7 +354,7 @@ export function Vehicle({
         restitution={0.02}
       />
 
-      {/* Elevated Rear Tail */}
+      {/* Elevated Rear Tail Collider */}
       <CuboidCollider
         args={[0.80, 0.14, 0.6]}
         position={[0, 0.46, 1.6]}
@@ -305,6 +369,24 @@ export function Vehicle({
       {wheelFR && <primitive object={wheelFR} />}
       {wheelRL && <primitive object={wheelRL} />}
       {wheelRR && <primitive object={wheelRR} />}
+
+      {/* Spatial Positional Audio: Continuous Engine Sound Loop */}
+      <PositionalAudio
+        ref={engineAudioRef}
+        url="/audio/engine.wav"
+        distance={24}
+        loop
+        autoplay={false}
+      />
+
+      {/* Spatial Positional Audio: Secondary Tire-Screeching Sound */}
+      <PositionalAudio
+        ref={skidAudioRef}
+        url="/audio/skid.wav"
+        distance={20}
+        loop
+        autoplay={false}
+      />
     </RigidBody>
   );
 }
