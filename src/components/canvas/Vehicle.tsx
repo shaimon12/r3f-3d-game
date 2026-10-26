@@ -31,8 +31,11 @@ const _targetQuat = new THREE.Quaternion();
 const _targetPos = new THREE.Vector3();
 
 // Sphere collider radius & wheel dimensions
-const SPHERE_RADIUS = 0.75;
+// Radius 1.2m gives 2.4m width matching sports car footprint, preventing wall tunneling
+const SPHERE_RADIUS = 1.2;
 const WHEEL_RADIUS = 0.34;
+const MAX_SPEED_MPH = 150;
+const MAX_SPEED_MS = MAX_SPEED_MPH / 2.23694; // ~67.056 m/s
 
 export function Vehicle({
   position = [-42.5, 2.0, 56],
@@ -94,6 +97,10 @@ export function Vehicle({
 
   // Browser Autoplay Policy: resume audio context and prepare audio nodes on user interaction
   useEffect(() => {
+    if (sphereRigidBodyRef.current) {
+      sphereRigidBodyRef.current.enableCcd(true);
+    }
+
     const handleUserInteraction = () => {
       if (engineAudioRef.current) {
         const ctx = engineAudioRef.current.context;
@@ -307,26 +314,27 @@ export function Vehicle({
     let vLat = linvel.x * nRx + linvel.z * nRz;
 
     // Forward Acceleration & Throttle Dynamics
-    // Top speeds: ~107 mph (48 m/s) standard, ~150 mph (67 m/s) with boost
-    const topForwardSpeed = boost ? 67.0 : 48.0;
-    const reverseTopSpeed = -15.0;
+    // Target speeds: scaled to MAX_SPEED_MS (150 mph = 67.056 m/s)
+    const topForwardSpeed = boost ? MAX_SPEED_MS : MAX_SPEED_MS * 0.85;
+    const reverseTopSpeed = -18.0;
 
     if (forward) {
-      const accelRate = boost ? 26.0 : 18.0;
+      // Multiply forward impulse/velocity by 10 to overcome linear damping
+      const accelRate = boost ? 260.0 : 180.0;
       vFwd = Math.min(topForwardSpeed, vFwd + accelRate * dt);
     } else if (backward) {
       if (vFwd > 1.0) {
         // Strong responsive braking
-        const brakeDecel = 38.0;
+        const brakeDecel = 65.0;
         vFwd = Math.max(0, vFwd - brakeDecel * dt);
       } else {
         // Reverse
-        const reverseAccel = 14.0;
+        const reverseAccel = 25.0;
         vFwd = Math.max(reverseTopSpeed, vFwd - reverseAccel * dt);
       }
     } else {
       // Coasting aerodynamic & mechanical drag
-      const coastDecel = 8.0;
+      const coastDecel = 12.0;
       if (vFwd > 0) {
         vFwd = Math.max(0, vFwd - coastDecel * dt);
       } else if (vFwd < 0) {
@@ -336,7 +344,7 @@ export function Vehicle({
 
     // Handbrake deceleration
     if (handbrake) {
-      const handbrakeDecel = 24.0;
+      const handbrakeDecel = 32.0;
       if (vFwd > 0) {
         vFwd = Math.max(0, vFwd - handbrakeDecel * dt);
       }
@@ -368,8 +376,37 @@ export function Vehicle({
     const visualCar = visualCarRef.current;
     if (!sphere || !visualCar) return;
 
+    // Clamp the maximum linear velocity vector to a magnitude equivalent to 150 mph (~67.056 m/s)
+    let linvel = sphere.linvel();
+    const linvelMagnitude = Math.hypot(linvel.x, linvel.y, linvel.z);
+    if (linvelMagnitude > MAX_SPEED_MS) {
+      const clampFactor = MAX_SPEED_MS / linvelMagnitude;
+      sphere.setLinvel(
+        {
+          x: linvel.x * clampFactor,
+          y: linvel.y * clampFactor,
+          z: linvel.z * clampFactor,
+        },
+        true
+      );
+      linvel = sphere.linvel();
+    }
+
+    const horizSpeed = Math.hypot(linvel.x, linvel.z);
+    if (horizSpeed > MAX_SPEED_MS) {
+      const hFactor = MAX_SPEED_MS / horizSpeed;
+      sphere.setLinvel(
+        {
+          x: linvel.x * hFactor,
+          y: linvel.y,
+          z: linvel.z * hFactor,
+        },
+        true
+      );
+      linvel = sphere.linvel();
+    }
+
     const spherePos = sphere.translation();
-    const linvel = sphere.linvel();
     const speedMs = Math.hypot(linvel.x, linvel.z);
     const speedMph = Math.round(speedMs * 2.23694);
 
@@ -382,7 +419,7 @@ export function Vehicle({
     const rayOrigin = { x: spherePos.x, y: spherePos.y + 0.5, z: spherePos.z };
     const rayDir = { x: 0, y: -1, z: 0 };
     const ray = new RAPIER.Ray(rayOrigin, rayDir);
-    const maxToi = 4.0;
+    const maxToi = SPHERE_RADIUS * 2 + 3.0;
     const hit = world.castRayAndGetNormal(
       ray,
       maxToi,
