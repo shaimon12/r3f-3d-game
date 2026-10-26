@@ -510,31 +510,16 @@ export function Vehicle({
       angularDamping={4.5}
       onCollisionEnter={handleCollision}
     >
-      {/* Central Chassis Tub Collider with high underbody clearance to eliminate snagging */}
+      {/* Explicitly defined vehicle hitbox scaled 5% larger than the visual 3D mesh */}
+      {/* Visual mesh dimensions: W: 2.23m, H: 1.172m (from y=0.20 to 1.372m), L: 4.91m */}
+      {/* +5% dimensions: W: 2.342m (half: 1.171), H: 1.23m (half: 0.615), L: 5.156m (half: 2.578) */}
+      {/* Ensures the invisible hitbox strikes walls/obstacles before the visual model does, preventing clipping */}
       <CuboidCollider
-        args={[0.82, 0.14, 1.25]}
-        position={[0, 0.40, 0]}
-        mass={1200}
+        args={[1.171, 0.615, 2.578]}
+        position={[0, 0.79, -0.02]}
+        mass={1900}
         friction={0.4}
-        restitution={0.02}
-      />
-
-      {/* Elevated Front Nose Collider */}
-      <CuboidCollider
-        args={[0.72, 0.12, 0.55]}
-        position={[0, 0.46, -1.6]}
-        mass={350}
-        friction={0.3}
-        restitution={0.02}
-      />
-
-      {/* Elevated Rear Tail Collider */}
-      <CuboidCollider
-        args={[0.76, 0.12, 0.55]}
-        position={[0, 0.48, 1.6]}
-        mass={350}
-        friction={0.3}
-        restitution={0.02}
+        restitution={0.05}
       />
 
       {/* 3D Sports Car Model Visuals */}

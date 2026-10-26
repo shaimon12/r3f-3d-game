@@ -1,6 +1,6 @@
 import { Suspense, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { Environment, Sky, ContactShadows } from '@react-three/drei';
+import { Environment, Sky, ContactShadows, BakeShadows } from '@react-three/drei';
 import { Physics } from '@react-three/rapier';
 import * as THREE from 'three';
 import { Ground } from './components/canvas/Ground';
@@ -96,11 +96,11 @@ export function App() {
         markerRef={miniMapMarkerRef}
       />
 
-      {/* 3D WebGL Canvas with Adaptive DPR and High-Performance GPU Profile */}
+      {/* 3D WebGL Canvas with Optimized DPR ([1, 1.5]) and High-Performance GPU Profile */}
       <Canvas
         shadows
         camera={{ position: [-42.5, 4.5, 64], fov: 52 }}
-        dpr={[1, 2]}
+        dpr={[1, 1.5]}
         gl={{
           powerPreference: 'high-performance',
           antialias: true,
@@ -155,6 +155,8 @@ export function App() {
             <Ground size={[500, 500]} color="#141820" gridColor="#2a3444" />
 
             {/* Professional Formula 1 Grand Prix Circuit with Continuous Tire Barriers */}
+            {/* Wrap static track elements in Drei BakeShadows component to optimize the rendering pipeline */}
+            <BakeShadows />
             <Track />
 
             {/* Three Invisible Rigid Body Sensor Checkpoints to Track Valid Laps */}

@@ -238,6 +238,7 @@ roadGeo.setAttribute('color', new THREE.Float32BufferAttribute(roadColors, 3));
 roadGeo.setIndex(roadIndices);
 
 const roadMesh = new THREE.Mesh(roadGeo, materials.asphaltTrack);
+roadMesh.castShadow = false;
 roadMesh.receiveShadow = true;
 root.add(roadMesh);
 
