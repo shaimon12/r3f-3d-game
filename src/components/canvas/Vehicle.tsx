@@ -7,6 +7,7 @@ import {
   RigidBody,
   CuboidCollider,
   type RapierRigidBody,
+  type CollisionEnterPayload,
 } from '@react-three/rapier';
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
@@ -36,6 +37,10 @@ export function Vehicle({
   // Spatial Audio Refs
   const engineAudioRef = useRef<THREE.PositionalAudio>(null);
   const skidAudioRef = useRef<THREE.PositionalAudio>(null);
+  const crashAudioRef = useRef<THREE.PositionalAudio>(null);
+
+  // Crash cooldown tracker to prevent multi-contact frame stuttering
+  const lastCrashTimestamp = useRef(0);
 
   // Load the Sleek Aerodynamic Sports Car GLB model
   const { scene } = useGLTF('/models/car.glb');
@@ -110,7 +115,7 @@ export function Vehicle({
     };
   }, [world, wheelPositions]);
 
-  // Browser Autoplay Policy: resume audio context and start engine sound on first user action
+  // Browser Autoplay Policy: resume audio context and prepare audio nodes on user interaction
   useEffect(() => {
     const handleUserInteraction = () => {
       // Resume and start continuous engine audio loop
@@ -120,12 +125,12 @@ export function Vehicle({
           ctx.resume();
         }
         if (!engineAudioRef.current.isPlaying) {
-          engineAudioRef.current.setVolume(0.45);
+          engineAudioRef.current.setVolume(0.40);
           engineAudioRef.current.play();
         }
       }
 
-      // Resume skid audio context (kept muted until drift threshold is breached)
+      // Resume skid audio context (muted until drifting)
       if (skidAudioRef.current) {
         const ctx = skidAudioRef.current.context;
         if (ctx && ctx.state === 'suspended') {
@@ -134,6 +139,14 @@ export function Vehicle({
         if (!skidAudioRef.current.isPlaying) {
           skidAudioRef.current.setVolume(0);
           skidAudioRef.current.play();
+        }
+      }
+
+      // Resume crash audio context
+      if (crashAudioRef.current) {
+        const ctx = crashAudioRef.current.context;
+        if (ctx && ctx.state === 'suspended') {
+          ctx.resume();
         }
       }
     };
@@ -147,14 +160,88 @@ export function Vehicle({
     };
   }, []);
 
-  // Tuned driving parameters
+  // Collision handling & metallic crash sound trigger
+  const handleCollision = (payload: CollisionEnterPayload) => {
+    const chassis = chassisRigidBodyRef.current;
+    if (!chassis) return;
+
+    const now = performance.now();
+    // 120ms debounce to prevent multiple triggers from consecutive manifold contacts
+    if (now - lastCrashTimestamp.current < 120) return;
+
+    // Linear velocity vector of vehicle
+    const linvel = chassis.linvel();
+    const speed = Math.sqrt(linvel.x ** 2 + linvel.y ** 2 + linvel.z ** 2);
+
+    // Collision normal impact velocity
+    let normalSpeed = speed;
+    try {
+      const normal = payload.manifold.normal();
+      if (normal) {
+        normalSpeed = Math.abs(linvel.x * normal.x + linvel.y * normal.y + linvel.z * normal.z);
+      }
+    } catch {
+      normalSpeed = speed;
+    }
+
+    // Check contact impulse from solver if available
+    let maxImpulse = 0;
+    try {
+      const numContacts = payload.manifold.numContacts();
+      for (let i = 0; i < numContacts; i++) {
+        const imp = payload.manifold.contactImpulse(i) || 0;
+        if (imp > maxImpulse) maxImpulse = imp;
+      }
+    } catch {
+      maxImpulse = 0;
+    }
+
+    // Vehicle mass = 1900 kg. Calculate impact impulse force: J = m * deltaV
+    const vehicleMass = 1900;
+    const velocityForce = vehicleMass * Math.max(normalSpeed, speed * 0.45);
+    const totalImpactForce = Math.max(velocityForce, maxImpulse);
+
+    // Minimum impact threshold: 5500 N*s (approx 6.5 mph hard impact into barrier/wall)
+    const minThreshold = 5500;
+    const maxForceScale = 42000; // Force of high-speed ~50+ mph crash
+
+    if (totalImpactForce > minThreshold) {
+      lastCrashTimestamp.current = now;
+
+      // Scale volume dynamically based on impact force (from 0.25 for a solid bump up to 1.0 for a hard crash)
+      const normalizedForce = THREE.MathUtils.clamp(
+        (totalImpactForce - minThreshold) / (maxForceScale - minThreshold),
+        0,
+        1
+      );
+      const crashVolume = THREE.MathUtils.clamp(0.25 + normalizedForce * 0.75, 0.25, 1.0);
+
+      // Randomize pitch slightly (0.92 to 1.08) for acoustic variation on repeated impacts
+      const crashPitch = THREE.MathUtils.clamp(0.95 + (Math.random() - 0.5) * 0.16, 0.85, 1.15);
+
+      if (crashAudioRef.current) {
+        const audio = crashAudioRef.current;
+        if (audio.context && audio.context.state === 'suspended') {
+          audio.context.resume();
+        }
+
+        if (audio.isPlaying) {
+          audio.stop();
+        }
+        audio.setVolume(crashVolume);
+        audio.setPlaybackRate(crashPitch);
+        audio.play();
+      }
+    }
+  };
+
+  // Driving parameters
   const steerAngleRef = useRef(0);
   const maxSteerAngle = 0.50;
   const maxEngineForce = 8840; // Doubled engine force
   const boostMultiplier = 1.70;
   const maxBrakeForce = 220;
 
-  // Initial spawn position memory for reset
   const spawnPos = useRef(position);
 
   // Run before each physics step: sample WASD inputs and update Rapier Vehicle Controller
@@ -225,7 +312,7 @@ export function Vehicle({
     controller.updateVehicle(stepWorld.timestep);
   });
 
-  // Render loop: Synchronize wheel meshes, telemetry, and dynamic spatial audio
+  // Render loop: Synchronize wheel meshes, telemetry, and clamped spatial audio
   const wheelRollRef = useRef([0, 0, 0, 0]);
 
   useFrame((_, delta) => {
@@ -233,7 +320,8 @@ export function Vehicle({
     if (!controller) return;
 
     // Convert speed to MPH (1 m/s = 2.23694 mph)
-    const speedMs = Math.abs(controller.currentVehicleSpeed());
+    const currentSpeed = controller.currentVehicleSpeed();
+    const speedMs = Number.isFinite(currentSpeed) ? Math.abs(currentSpeed) : 0;
     const speedMph = Math.round(speedMs * 2.23694);
     if (onSpeedChange) {
       onSpeedChange(speedMph, speedMs);
@@ -256,23 +344,31 @@ export function Vehicle({
     }
 
     // ==========================================
-    // SPATIAL AUDIO PROCESSING
+    // REFACTORED SPATIAL AUDIO PROCESSING
     // ==========================================
-    // 1. Continuous Engine Loop: Dynamic pitch scaling based on current velocity
-    if (engineAudioRef.current) {
-      // Base idle pitch is 0.85, scaling smoothly up to ~2.35 at top speed
-      const targetPitch = 0.85 + Math.min(speedMph / 50, 1.5);
-      const currentPitch = engineAudioRef.current.playbackRate;
-      const newPitch = THREE.MathUtils.lerp(currentPitch, targetPitch, delta * 5.0);
-      engineAudioRef.current.setPlaybackRate(newPitch);
+    // 1. Continuous Engine Loop: Smoothly clamped pitch without audio glitching
+    if (engineAudioRef.current && engineAudioRef.current.isPlaying) {
+      // Calculate target pitch and strictly clamp to safe acoustic envelope [0.75, 2.30]
+      const targetPitch = THREE.MathUtils.clamp(0.75 + (speedMph / 60) * 1.30, 0.75, 2.30);
 
-      // Dynamic volume: louder under throttle or high velocity
+      // Smooth lerp to prevent abrupt frequency jumps
+      const currentPitch = engineAudioRef.current.playbackRate ?? 1.0;
+      const lerpedPitch = THREE.MathUtils.lerp(currentPitch, targetPitch, delta * 4.5);
+      const safePitch = THREE.MathUtils.clamp(lerpedPitch, 0.75, 2.30);
+
+      if (Number.isFinite(safePitch)) {
+        engineAudioRef.current.setPlaybackRate(safePitch);
+      }
+
+      // Smooth dynamic volume scaling
       const isThrottling = controlsRef.current.forward || controlsRef.current.backward;
       const targetVolume = isThrottling
-        ? 0.75 + Math.min(speedMph / 140, 0.25)
-        : 0.35 + Math.min(speedMph / 140, 0.25);
+        ? THREE.MathUtils.clamp(0.70 + (speedMph / 120) * 0.25, 0.70, 0.95)
+        : THREE.MathUtils.clamp(0.35 + (speedMph / 120) * 0.25, 0.35, 0.60);
+
       const currentVol = engineAudioRef.current.getVolume();
-      engineAudioRef.current.setVolume(THREE.MathUtils.lerp(currentVol, targetVolume, delta * 4.0));
+      const safeVol = THREE.MathUtils.clamp(THREE.MathUtils.lerp(currentVol, targetVolume, delta * 4.0), 0.1, 1.0);
+      engineAudioRef.current.setVolume(safeVol);
     }
 
     // 2. Secondary Tire-Screeching Sound Effect: Triggers on high angular velocity (drifting)
@@ -293,7 +389,7 @@ export function Vehicle({
         const driftSeverity = isHandbrakeSlide ? 0.9 : Math.min(1.0, (yawSpeed - driftThreshold) / 1.3);
         targetSkidVolume = 0.25 + driftSeverity * 0.65; // Volume up to 0.90
 
-        const skidPitch = 0.95 + driftSeverity * 0.35;
+        const skidPitch = THREE.MathUtils.clamp(0.95 + driftSeverity * 0.35, 0.9, 1.4);
         skidAudioRef.current.setPlaybackRate(skidPitch);
       }
 
@@ -335,6 +431,7 @@ export function Vehicle({
       canSleep={false}
       linearDamping={0.22}
       angularDamping={2.8}
+      onCollisionEnter={handleCollision}
     >
       {/* Central Chassis Tub Collider */}
       <CuboidCollider
@@ -385,6 +482,15 @@ export function Vehicle({
         url="/audio/skid.wav"
         distance={20}
         loop
+        autoplay={false}
+      />
+
+      {/* Spatial Positional Audio: Metallic Crash Sound Effect */}
+      <PositionalAudio
+        ref={crashAudioRef}
+        url="/audio/crash.wav"
+        distance={28}
+        loop={false}
         autoplay={false}
       />
     </RigidBody>
