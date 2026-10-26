@@ -6,14 +6,15 @@ import * as THREE from 'three';
 import { Ground } from './components/canvas/Ground';
 import { Lights } from './components/canvas/Lights';
 import { Vehicle } from './components/canvas/Vehicle';
+import { Track } from './components/canvas/Track';
 import { CameraController } from './components/canvas/CameraController';
 import { HUD } from './components/ui/HUD';
 import './App.css';
 
 export function App() {
-  const [speed, setSpeed] = useState(0);
+  const [speedMph, setSpeedMph] = useState(0);
   const [cameraMode, setCameraMode] = useState<'follow' | 'orbit'>('follow');
-  const vehiclePosRef = useRef(new THREE.Vector3(0, 0.6, 0));
+  const vehiclePosRef = useRef(new THREE.Vector3(0, 0.6, 60));
 
   const toggleCameraMode = () => {
     setCameraMode((prev) => (prev === 'follow' ? 'orbit' : 'follow'));
@@ -21,9 +22,9 @@ export function App() {
 
   return (
     <div className="canvas-container">
-      {/* 2D Interactive Game HUD */}
+      {/* 2D Interactive Game HUD with Top-Left MPH Speedometer */}
       <HUD
-        speed={speed}
+        speedMph={speedMph}
         cameraMode={cameraMode}
         onToggleCamera={toggleCameraMode}
       />
@@ -31,36 +32,39 @@ export function App() {
       {/* 3D WebGL Canvas */}
       <Canvas
         shadows
-        camera={{ position: [0, 4.5, 9], fov: 50 }}
+        camera={{ position: [0, 4.5, 69], fov: 50 }}
         dpr={[1, 2]}
       >
         {/* Sky Atmosphere & Background */}
-        <color attach="background" args={['#0d1117']} />
-        <fog attach="fog" args={['#0d1117', 40, 120]} />
+        <color attach="background" args={['#0b0f17']} />
+        <fog attach="fog" args={['#0b0f17', 70, 260]} />
         <Sky
-          sunPosition={[120, 30, 80]}
-          turbidity={7}
-          rayleigh={4}
+          sunPosition={[140, 40, 100]}
+          turbidity={6}
+          rayleigh={3}
           mieCoefficient={0.005}
           mieDirectionalG={0.8}
         />
 
         {/* Scene Lighting */}
-        <Lights ambientIntensity={0.5} directionalIntensity={1.8} />
+        <Lights ambientIntensity={0.55} directionalIntensity={1.9} />
 
-        {/* Dynamic / Orbit Camera Controller */}
+        {/* Dynamic Follow / Free Orbit Camera Controller */}
         <CameraController mode={cameraMode} targetPosRef={vehiclePosRef} />
 
         {/* Rapier Physics Simulation */}
         <Suspense fallback={null}>
           <Physics gravity={[0, -9.81, 0]}>
-            {/* Ground Plane with Static RigidBody Collider */}
-            <Ground size={[160, 160]} color="#1e2430" gridColor="#334155" />
+            {/* 500x500 Ground Plane with 4 Invisible Perimeter Boundary Walls */}
+            <Ground size={[500, 500]} color="#141820" gridColor="#232d3d" />
 
-            {/* Player Controlled Toyota Camry with Vehicle Physics */}
+            {/* Stylized Race Track with Mega Launch Ramp & Static Trimesh Colliders */}
+            <Track />
+
+            {/* High-Performance Vehicle (Spawned on Start Line at Z = 60) */}
             <Vehicle
-              position={[0, 0.6, 0]}
-              onSpeedChange={setSpeed}
+              position={[0, 0.6, 60]}
+              onSpeedChange={(mph) => setSpeedMph(mph)}
               targetPosRef={vehiclePosRef}
             />
           </Physics>

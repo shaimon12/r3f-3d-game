@@ -2,22 +2,36 @@ import React from 'react';
 import './HUD.css';
 
 interface HUDProps {
-  speed: number;
+  speedMph: number;
   cameraMode: 'follow' | 'orbit';
   onToggleCamera: () => void;
 }
 
-export const HUD: React.FC<HUDProps> = ({ speed, cameraMode, onToggleCamera }) => {
+export const HUD: React.FC<HUDProps> = ({ speedMph, cameraMode, onToggleCamera }) => {
   return (
     <div className="game-hud">
-      {/* Top Left: Title & Vehicle Specs */}
-      <div className="hud-card top-left">
-        <div className="vehicle-badge">XV30 PLATFORM</div>
-        <h1 className="vehicle-title">Toyota Camry Sedan</h1>
-        <p className="vehicle-sub">3D Browser Vehicle Simulation • Rapier Raycast Physics</p>
+      {/* Top Left: Primary Speedometer & Velocity Overlay */}
+      <div className="hud-card speed-overlay-top-left">
+        <div className="speed-header">
+          <span className="live-dot" />
+          <span className="speed-title">VEHICLE VELOCITY</span>
+        </div>
+        <div className="speed-readout">
+          <span className="speed-number">{speedMph}</span>
+          <span className="speed-unit">MPH</span>
+        </div>
+        <div className="speed-bar-track">
+          <div
+            className="speed-bar-progress"
+            style={{ width: `${Math.min(100, (speedMph / 120) * 100)}%` }}
+          />
+        </div>
+        <div className="vehicle-caption">
+          Toyota Camry XV30 • 500x500 Stunt Circuit
+        </div>
       </div>
 
-      {/* Top Right: Camera Mode Switcher */}
+      {/* Top Right: Camera Switcher */}
       <div className="hud-card top-right">
         <button className="camera-toggle-btn" onClick={onToggleCamera}>
           <span className="cam-icon">🎥</span>
@@ -25,11 +39,11 @@ export const HUD: React.FC<HUDProps> = ({ speed, cameraMode, onToggleCamera }) =
         </button>
       </div>
 
-      {/* Bottom Left: Input Controls Reference */}
+      {/* Bottom Left: Vehicle Controls Reference */}
       <div className="hud-card bottom-left">
-        <div className="controls-header">VEHICLE CONTROLS</div>
+        <div className="controls-header">CONTROLS</div>
         <div className="key-row">
-          <kbd className="key">W</kbd> <span>Accelerate</span>
+          <kbd className="key">W</kbd> <span>Accelerate (+30% Force)</span>
         </div>
         <div className="key-row">
           <kbd className="key">S</kbd> <span>Brake / Reverse</span>
@@ -44,22 +58,7 @@ export const HUD: React.FC<HUDProps> = ({ speed, cameraMode, onToggleCamera }) =
           <kbd className="key">SHIFT</kbd> <span>Turbo Boost</span>
         </div>
         <div className="key-row">
-          <kbd className="key">R</kbd> <span>Reset Car</span>
-        </div>
-      </div>
-
-      {/* Bottom Right: Digital Speedometer */}
-      <div className="hud-card bottom-right speedometer-card">
-        <div className="speedo-label">SPEED</div>
-        <div className="speedo-digits">
-          <span className="speedo-number">{speed}</span>
-          <span className="speedo-unit">KM/H</span>
-        </div>
-        <div className="speedo-bar-container">
-          <div
-            className="speedo-bar-fill"
-            style={{ width: `${Math.min(100, (speed / 160) * 100)}%` }}
-          />
+          <kbd className="key">R</kbd> <span>Reset to Track</span>
         </div>
       </div>
     </div>

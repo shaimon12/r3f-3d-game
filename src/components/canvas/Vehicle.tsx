@@ -15,12 +15,12 @@ import { useKeyboardControls } from '@/hooks/useKeyboardControls';
 export interface VehicleProps {
   position?: [number, number, number];
   rotation?: [number, number, number];
-  onSpeedChange?: (speedKmh: number) => void;
+  onSpeedChange?: (speedMph: number, speedMs?: number) => void;
   targetPosRef?: React.MutableRefObject<THREE.Vector3>;
 }
 
 export function Vehicle({
-  position = [0, 0.6, 0],
+  position = [0, 0.6, 60],
   rotation = [0, 0, 0],
   onSpeedChange,
   targetPosRef,
@@ -56,7 +56,7 @@ export function Vehicle({
   // Suspension & wheel configuration
   const wheelRadius = 0.33;
   const suspensionRestLength = 0.25;
-  const connectionY = 0.55;
+  const connectionY = 0.45; // Connection height adjusted for lowered center of mass
 
   // Wheel attachment points in local coordinates
   const wheelPositions = useMemo(
@@ -86,11 +86,12 @@ export function Vehicle({
     });
 
     for (let i = 0; i < 4; i++) {
-      controller.setWheelSuspensionStiffness(i, 55.0);
-      controller.setWheelMaxSuspensionTravel(i, 0.25);
-      controller.setWheelFrictionSlip(i, 3.2);
-      controller.setWheelSuspensionCompression(i, 4.4);
-      controller.setWheelSuspensionRelaxation(i, 2.3);
+      // Enhanced stiffness & damping for high-speed stability and smooth ramp landings
+      controller.setWheelSuspensionStiffness(i, 62.0);
+      controller.setWheelMaxSuspensionTravel(i, 0.28);
+      controller.setWheelFrictionSlip(i, 3.4);
+      controller.setWheelSuspensionCompression(i, 4.8);
+      controller.setWheelSuspensionRelaxation(i, 2.6);
     }
 
     vehicleControllerRef.current = controller;
@@ -103,12 +104,15 @@ export function Vehicle({
     };
   }, [world, wheelPositions]);
 
-  // Dynamic driving state
+  // Dynamic driving state: +30% engine force increased from 3400 to 4420
   const steerAngleRef = useRef(0);
   const maxSteerAngle = 0.52; // ~30 degrees
-  const maxEngineForce = 3400; // Base engine power
-  const boostMultiplier = 1.6;
-  const maxBrakeForce = 140;
+  const maxEngineForce = 4420; // +30% power (was 3400)
+  const boostMultiplier = 1.65;
+  const maxBrakeForce = 180;
+
+  // Initial spawn position memory for reset
+  const spawnPos = useRef(position);
 
   // Run before each physics step: sample WASD inputs and update Rapier Vehicle Controller
   useBeforePhysicsStep((stepWorld) => {
@@ -118,9 +122,9 @@ export function Vehicle({
 
     const { forward, backward, left, right, handbrake, boost, reset } = controlsRef.current;
 
-    // Reset vehicle on 'R' key
+    // Reset vehicle on 'R' key to upright position above track
     if (reset) {
-      chassis.setTranslation({ x: 0, y: 1.0, z: 0 }, true);
+      chassis.setTranslation({ x: spawnPos.current[0], y: 1.0, z: spawnPos.current[2] }, true);
       chassis.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
       chassis.setLinvel({ x: 0, y: 0, z: 0 }, true);
       chassis.setAngvel({ x: 0, y: 0, z: 0 }, true);
@@ -133,8 +137,8 @@ export function Vehicle({
     if (left) targetSteer += maxSteerAngle;
     if (right) targetSteer -= maxSteerAngle;
 
-    // Smooth steering response
-    const steerSpeed = 8.0;
+    // Smooth steering response speed
+    const steerSpeed = 9.0;
     steerAngleRef.current = THREE.MathUtils.lerp(
       steerAngleRef.current,
       targetSteer,
@@ -175,7 +179,7 @@ export function Vehicle({
       // Rolling friction / coasting
       for (let i = 0; i < 4; i++) {
         controller.setWheelEngineForce(i, 0);
-        controller.setWheelBrake(i, 4.0); // Gentle engine drag
+        controller.setWheelBrake(i, 4.0);
       }
     }
 
@@ -196,11 +200,11 @@ export function Vehicle({
     const controller = vehicleControllerRef.current;
     if (!controller) return;
 
-    // Report current speed in km/h for UI/HUD
+    // Convert speed to MPH (1 m/s = 2.23694 mph)
     const speedMs = Math.abs(controller.currentVehicleSpeed());
-    const speedKmh = Math.round(speedMs * 3.6);
+    const speedMph = Math.round(speedMs * 2.23694);
     if (onSpeedChange) {
-      onSpeedChange(speedKmh);
+      onSpeedChange(speedMph, speedMs);
     }
 
     // Update target position ref for camera tracking
@@ -242,16 +246,28 @@ export function Vehicle({
       rotation={rotation}
       colliders={false}
       type="dynamic"
-      linearDamping={0.5}
-      angularDamping={2.0}
+      canSleep={false}
+      // Reduced linear damping to unlock +30% higher top speed
+      linearDamping={0.32}
+      // Increased angular damping to stabilize rotation in air and high-G turns
+      angularDamping={2.6}
     >
-      {/* Chassis Main Physics Collider */}
+      {/* Lowered Main Body Collider (centered at Y = 0.30 instead of 0.55) */}
       <CuboidCollider
-        args={[0.91, 0.35, 2.3]}
-        position={[0, 0.55, 0]}
-        density={240}
+        args={[0.91, 0.30, 2.3]}
+        position={[0, 0.30, 0]}
+        density={220}
+        friction={0.5}
+        restitution={0.05}
+      />
+
+      {/* Low-Center-of-Gravity Floor Ballast: Places majority of mass near the floorpan (Y = 0.12) to prevent roll-overs */}
+      <CuboidCollider
+        args={[0.85, 0.08, 2.1]}
+        position={[0, 0.12, 0]}
+        mass={800}
         friction={0.6}
-        restitution={0.1}
+        restitution={0.02}
       />
 
       {/* 3D Car Model Visuals */}
@@ -264,7 +280,7 @@ export function Vehicle({
   );
 }
 
-// Pre-load the car GLTF for instant rendering without hitching
+// Pre-load the car GLTF
 useGLTF.preload('/models/car.glb');
 
 export default Vehicle;
