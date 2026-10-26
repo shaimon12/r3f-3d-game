@@ -460,6 +460,7 @@ export function Vehicle({
       colliders={false}
       type="dynamic"
       canSleep={false}
+      ccd={true}
       linearDamping={0.22}
       angularDamping={2.8}
       onCollisionEnter={handleCollision}
