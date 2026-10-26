@@ -11,6 +11,7 @@ import { Checkpoints } from './components/canvas/Checkpoints';
 import { CameraController, type VehicleState } from './components/canvas/CameraController';
 import { MiniMapDriver } from './components/canvas/MiniMapDriver';
 import { HUD } from './components/ui/HUD';
+import { LoadingScreen } from './components/ui/LoadingScreen';
 import { useGameStore } from './stores/useGameStore';
 import './App.css';
 
@@ -67,8 +68,10 @@ export function App() {
   const miniMapMarkerRef = useRef<SVGGElement>(null);
 
   // Shared reactive state ref for vehicle position, orientation, and velocity
+  // Explicitly set initial spawn coordinates slightly above the track (Y = 2.0)
+  // so it drops safely onto the pavement only after the track collider exists.
   const vehicleStateRef = useRef<VehicleState>({
-    position: new THREE.Vector3(-42.5, 0.6, 56),
+    position: new THREE.Vector3(-42.5, 2.0, 56),
     quaternion: new THREE.Quaternion(),
     speedMph: 0,
   });
@@ -79,6 +82,9 @@ export function App() {
 
   return (
     <div className="canvas-container">
+      {/* HTML Loading Screen Overlay: Remains active until all .glb assets and colliders fully load */}
+      <LoadingScreen />
+
       {/* Sleek, Modern HTML Overlay for Lap Counter, Millisecond Timer, Speedometer & GPS Mini-Map */}
       <HUD
         cameraMode={cameraMode}
@@ -92,46 +98,47 @@ export function App() {
         camera={{ position: [-42.5, 4.5, 64], fov: 52 }}
         dpr={[1, 2]}
       >
-        {/* Render-loop Timer Driver */}
-        <TimerLoop />
-
-        {/* Real-time Mini-Map Driver updating 2D SVG arrow position & heading in useFrame */}
-        <MiniMapDriver markerRef={miniMapMarkerRef} vehicleStateRef={vehicleStateRef} />
-
-        {/* Realistic Sunset HDRI Environment & Reflections */}
-        <Environment background preset="sunset" />
-
-        {/* Atmosphere & Sky enhancement */}
-        <Sky
-          sunPosition={[140, 25, -60]}
-          turbidity={8}
-          rayleigh={4}
-          mieCoefficient={0.005}
-          mieDirectionalG={0.8}
-        />
-
-        {/* Directional Sun Light matching Sunset HDRI */}
-        <Lights directionalIntensity={1.8} />
-
-        {/* Contact Shadows directly under the entire Track & Ramps */}
-        <ContactShadows
-          position={[0, 0.02, 0]}
-          opacity={0.8}
-          scale={220}
-          blur={2.2}
-          far={25}
-          resolution={1024}
-          color="#000000"
-        />
-
-        {/* Contact Shadows directly under the moving Sports Car */}
-        <VehicleContactShadow vehicleStateRef={vehicleStateRef} />
-
-        {/* Cinematic Follow-Camera using lerp to trail smoothly behind & above */}
-        <CameraController mode={cameraMode} vehicleStateRef={vehicleStateRef} />
-
-        {/* Rapier Physics Simulation with variable timeStep to eliminate physics jitter */}
+        {/* React Suspense Boundary wrapping the entire 3D scene */}
         <Suspense fallback={null}>
+          {/* Render-loop Timer Driver */}
+          <TimerLoop />
+
+          {/* Real-time Mini-Map Driver updating 2D SVG arrow position & heading in useFrame */}
+          <MiniMapDriver markerRef={miniMapMarkerRef} vehicleStateRef={vehicleStateRef} />
+
+          {/* Realistic Sunset HDRI Environment & Reflections */}
+          <Environment background preset="sunset" />
+
+          {/* Atmosphere & Sky enhancement */}
+          <Sky
+            sunPosition={[140, 25, -60]}
+            turbidity={8}
+            rayleigh={4}
+            mieCoefficient={0.005}
+            mieDirectionalG={0.8}
+          />
+
+          {/* Directional Sun Light matching Sunset HDRI */}
+          <Lights directionalIntensity={1.8} />
+
+          {/* Contact Shadows directly under the entire Track & Ramps */}
+          <ContactShadows
+            position={[0, 0.02, 0]}
+            opacity={0.8}
+            scale={220}
+            blur={2.2}
+            far={25}
+            resolution={1024}
+            color="#000000"
+          />
+
+          {/* Contact Shadows directly under the moving Sports Car */}
+          <VehicleContactShadow vehicleStateRef={vehicleStateRef} />
+
+          {/* Cinematic Follow-Camera using lerp to trail smoothly behind & above */}
+          <CameraController mode={cameraMode} vehicleStateRef={vehicleStateRef} />
+
+          {/* Rapier Physics Simulation with variable timeStep to eliminate physics jitter */}
           <Physics gravity={[0, -9.81, 0]} timeStep="vary">
             {/* 500x500 Ground Plane with 4 Invisible Perimeter Boundary Walls */}
             <Ground size={[500, 500]} color="#141820" gridColor="#2a3444" />
@@ -142,9 +149,9 @@ export function App() {
             {/* Three Invisible Rigid Body Sensor Checkpoints to Track Valid Laps */}
             <Checkpoints />
 
-            {/* Aerodynamic Sports Car with Doubled Engine Force & Tuned Rigid Body */}
+            {/* Aerodynamic Sports Car dropping safely from Y = 2.0 onto track pavement */}
             <Vehicle
-              position={[-42.5, 0.6, 56]}
+              position={[-42.5, 2.0, 56]}
               onSpeedChange={(mph) => setSpeedMph(mph)}
               vehicleStateRef={vehicleStateRef}
             />

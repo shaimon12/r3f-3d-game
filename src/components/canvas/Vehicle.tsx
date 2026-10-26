@@ -23,7 +23,7 @@ export interface VehicleProps {
 }
 
 export function Vehicle({
-  position = [-42.5, 0.6, 56],
+  position = [-42.5, 2.0, 56],
   rotation = [0, 0, 0],
   onSpeedChange,
   targetPosRef,
@@ -254,7 +254,7 @@ export function Vehicle({
 
     // Reset vehicle on 'R' key to upright position above track
     if (reset) {
-      chassis.setTranslation({ x: spawnPos.current[0], y: 1.0, z: spawnPos.current[2] }, true);
+      chassis.setTranslation({ x: spawnPos.current[0], y: 2.0, z: spawnPos.current[2] }, true);
       chassis.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
       chassis.setLinvel({ x: 0, y: 0, z: 0 }, true);
       chassis.setAngvel({ x: 0, y: 0, z: 0 }, true);
