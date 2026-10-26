@@ -1,13 +1,15 @@
 import React from 'react';
 import { useGameStore, formatLapTime } from '@/stores/useGameStore';
+import { MiniMap } from './MiniMap';
 import './HUD.css';
 
 interface HUDProps {
   cameraMode: 'follow' | 'orbit';
   onToggleCamera: () => void;
+  markerRef: React.RefObject<SVGGElement>;
 }
 
-export const HUD: React.FC<HUDProps> = ({ cameraMode, onToggleCamera }) => {
+export const HUD: React.FC<HUDProps> = ({ cameraMode, onToggleCamera, markerRef }) => {
   const laps = useGameStore((state) => state.laps);
   const currentTime = useGameStore((state) => state.currentTime);
   const bestTime = useGameStore((state) => state.bestTime);
@@ -142,6 +144,9 @@ export const HUD: React.FC<HUDProps> = ({ cameraMode, onToggleCamera }) => {
           <kbd className="key">R</kbd> <span>Reset to Track</span>
         </div>
       </div>
+
+      {/* 6. BOTTOM-RIGHT: Real-time 2D Mini-Map GPS Radar */}
+      <MiniMap markerRef={markerRef} />
     </div>
   );
 };

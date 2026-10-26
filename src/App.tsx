@@ -9,6 +9,7 @@ import { Vehicle } from './components/canvas/Vehicle';
 import { Track } from './components/canvas/Track';
 import { Checkpoints } from './components/canvas/Checkpoints';
 import { CameraController, type VehicleState } from './components/canvas/CameraController';
+import { MiniMapDriver } from './components/canvas/MiniMapDriver';
 import { HUD } from './components/ui/HUD';
 import { useGameStore } from './stores/useGameStore';
 import './App.css';
@@ -62,6 +63,9 @@ export function App() {
   const [cameraMode, setCameraMode] = useState<'follow' | 'orbit'>('follow');
   const setSpeedMph = useGameStore((state) => state.setSpeedMph);
 
+  // SVG DOM ref for the real-time mini-map player arrow icon
+  const miniMapMarkerRef = useRef<SVGGElement>(null);
+
   // Shared reactive state ref for vehicle position, orientation, and velocity
   const vehicleStateRef = useRef<VehicleState>({
     position: new THREE.Vector3(-42.5, 0.6, 56),
@@ -75,10 +79,11 @@ export function App() {
 
   return (
     <div className="canvas-container">
-      {/* Sleek, Modern HTML Overlay for Lap Counter, Millisecond Timer & Speedometer */}
+      {/* Sleek, Modern HTML Overlay for Lap Counter, Millisecond Timer, Speedometer & GPS Mini-Map */}
       <HUD
         cameraMode={cameraMode}
         onToggleCamera={toggleCameraMode}
+        markerRef={miniMapMarkerRef}
       />
 
       {/* 3D WebGL Canvas */}
@@ -89,6 +94,9 @@ export function App() {
       >
         {/* Render-loop Timer Driver */}
         <TimerLoop />
+
+        {/* Real-time Mini-Map Driver updating 2D SVG arrow position & heading in useFrame */}
+        <MiniMapDriver markerRef={miniMapMarkerRef} vehicleStateRef={vehicleStateRef} />
 
         {/* Realistic Sunset HDRI Environment & Reflections */}
         <Environment background preset="sunset" />
