@@ -106,11 +106,13 @@ export function Vehicle({
     });
 
     for (let i = 0; i < 4; i++) {
-      controller.setWheelSuspensionStiffness(i, 68.0);
-      controller.setWheelMaxSuspensionTravel(i, 0.30);
-      controller.setWheelFrictionSlip(i, 4.0);
-      controller.setWheelSuspensionCompression(i, 5.2);
-      controller.setWheelSuspensionRelaxation(i, 3.0);
+      // Tighten suspension stiffness so the car stays firmly planted on the road
+      controller.setWheelSuspensionStiffness(i, 130.0);
+      controller.setWheelMaxSuspensionTravel(i, 0.20);
+      // High tire friction grip to simulate asphalt grip and eliminate icy sliding
+      controller.setWheelFrictionSlip(i, 8.5);
+      controller.setWheelSuspensionCompression(i, 8.5);
+      controller.setWheelSuspensionRelaxation(i, 5.5);
     }
 
     vehicleControllerRef.current = controller;
@@ -284,7 +286,7 @@ export function Vehicle({
     const chassis = chassisRigidBodyRef.current;
     if (!controller || !chassis) return;
 
-    const { forward, backward, left, right, handbrake, boost, reset } = controlsRef.current;
+    const { forward, backward, handbrake, boost, reset } = controlsRef.current;
 
     // Reset vehicle on 'R' key to upright position above track
     if (reset) {
@@ -293,21 +295,12 @@ export function Vehicle({
       chassis.setLinvel({ x: 0, y: 0, z: 0 }, true);
       chassis.setAngvel({ x: 0, y: 0, z: 0 }, true);
       steerAngleRef.current = 0;
+      controller.setWheelSteering(0, 0);
+      controller.setWheelSteering(1, 0);
       return;
     }
 
-    // Steering input (A / D)
-    let targetSteer = 0;
-    if (left) targetSteer += maxSteerAngle;
-    if (right) targetSteer -= maxSteerAngle;
-
-    const steerSpeed = 10.0;
-    steerAngleRef.current = THREE.MathUtils.lerp(
-      steerAngleRef.current,
-      targetSteer,
-      stepWorld.timestep * steerSpeed
-    );
-
+    // Apply smoothed steering angle to front wheels for physics step
     controller.setWheelSteering(0, steerAngleRef.current);
     controller.setWheelSteering(1, steerAngleRef.current);
 
@@ -364,6 +357,24 @@ export function Vehicle({
   useFrame((_, delta) => {
     const controller = vehicleControllerRef.current;
     if (!controller) return;
+
+    // 1. Input smoothing using MathUtils.lerp in the useFrame loop
+    // Transitions the steering angle gradually rather than snapping instantly
+    const { left, right } = controlsRef.current;
+    let targetSteer = 0;
+    if (left) targetSteer += maxSteerAngle;
+    if (right) targetSteer -= maxSteerAngle;
+
+    const steerSmoothingSpeed = 5.0; // Responsive yet gradual transition
+    steerAngleRef.current = THREE.MathUtils.lerp(
+      steerAngleRef.current,
+      targetSteer,
+      Math.min(1.0, delta * steerSmoothingSpeed)
+    );
+
+    // Apply smoothed steering angle directly to the vehicle controller front wheels
+    controller.setWheelSteering(0, steerAngleRef.current);
+    controller.setWheelSteering(1, steerAngleRef.current);
 
     // Convert speed to MPH (1 m/s = 2.23694 mph)
     const currentSpeed = controller.currentVehicleSpeed();
@@ -495,8 +506,8 @@ export function Vehicle({
       type="dynamic"
       canSleep={false}
       ccd={true}
-      linearDamping={0.22}
-      angularDamping={2.8}
+      linearDamping={0.80}
+      angularDamping={4.5}
       onCollisionEnter={handleCollision}
     >
       {/* Central Chassis Tub Collider with high underbody clearance to eliminate snagging */}
