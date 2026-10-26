@@ -150,8 +150,13 @@ export function App() {
           {/* Cinematic Follow-Camera using lerp to trail smoothly behind & above */}
           <CameraController mode={cameraMode} vehicleStateRef={vehicleStateRef} />
 
-          {/* Rapier Physics Simulation with variable timeStep to eliminate physics jitter */}
-          <Physics gravity={[0, -9.81, 0]} timeStep="vary">
+          {/* Rapier Physics Simulation with variable timeStep and boosted solver precision */}
+          <Physics
+            gravity={[0, -9.81, 0]}
+            timeStep="vary"
+            numSolverIterations={20}
+            {...({ numPositionIterations: 20 } as any)}
+          >
             {/* 500x500 Ground Plane with 4 Invisible Perimeter Boundary Walls */}
             <Ground size={[500, 500]} color="#141820" gridColor="#2a3444" />
 
