@@ -75,6 +75,7 @@ export function App() {
     position: new THREE.Vector3(-42.5, 2.0, 56),
     quaternion: new THREE.Quaternion(),
     speedMph: 0,
+    collisionShake: 0,
   });
 
   const toggleCameraMode = () => {

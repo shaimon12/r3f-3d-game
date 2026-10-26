@@ -235,6 +235,17 @@ export function Vehicle({
     const kinematicImpulse = vehicleMass * normalSpeed;
     const totalImpactForce = Math.max(kinematicImpulse, maxSolverImpulse);
 
+    // TRIGGER CAMERA SHAKE ON WALL COLLISION:
+    // When the car strikes a wall or perimeter barrier, trigger camera shake
+    if (vehicleStateRef && (normalSpeed > 1.2 || totalImpactForce > 3000)) {
+      const shakeIntensity = THREE.MathUtils.clamp(
+        0.40 + (totalImpactForce / 60000) * 0.60,
+        0.40,
+        1.0
+      );
+      vehicleStateRef.current.collisionShake = shakeIntensity;
+    }
+
     // HIGH-VELOCITY WALL IMPACT THRESHOLD:
     // Increased to 26,000 N*s (requires at least ~14 m/s or 31 mph direct impact into a barrier).
     // Standard suspension bounces and mild grazing are completely ignored.

@@ -8,6 +8,7 @@ export interface VehicleState {
   position: THREE.Vector3;
   quaternion: THREE.Quaternion;
   speedMph: number;
+  collisionShake?: number;
 }
 
 interface CameraControllerProps {
@@ -34,9 +35,21 @@ const _backUnit = new THREE.Vector3(0, 0, 1);
 export function CameraController({ mode, vehicleStateRef }: CameraControllerProps) {
   const orbitRef = useRef<OrbitControlsImpl>(null);
   const currentLookAt = useRef(new THREE.Vector3(-42.5, 1.2, 50));
+  const collisionShakeIntensity = useRef(0);
 
   useFrame((state, delta) => {
-    const { position: carPos, quaternion: carQuat, speedMph } = vehicleStateRef.current;
+    const { position: carPos, quaternion: carQuat, speedMph, collisionShake = 0 } = vehicleStateRef.current;
+
+    // Smoothly decay wall collision shake impulse over time
+    if (collisionShake > 0) {
+      collisionShakeIntensity.current = Math.max(collisionShakeIntensity.current, collisionShake);
+      vehicleStateRef.current.collisionShake = 0; // Consume trigger
+    }
+    collisionShakeIntensity.current = THREE.MathUtils.lerp(
+      collisionShakeIntensity.current,
+      0,
+      Math.min(1, delta * 5.5)
+    );
 
     if (mode === 'follow') {
       // 1. Calculate orientation-aware trailing offset behind sports car without allocating new vectors
@@ -44,10 +57,10 @@ export function CameraController({ mode, vehicleStateRef }: CameraControllerProp
       _carForward.copy(_forwardUnit).applyQuaternion(carQuat);
       _carBack.copy(_backUnit).applyQuaternion(carQuat);
 
-      // Dynamic distance and height based on speed for cinematic sensation
-      const speedFactor = Math.min(1, speedMph / 120);
-      const trailDistance = 7.2 + speedFactor * 2.2;
-      const trailHeight = 2.6 + speedFactor * 0.7;
+      // Dynamic distance and height based on speed for visceral sensation of speed
+      const speedRatio = THREE.MathUtils.clamp(speedMph / 150, 0, 1.15);
+      const trailDistance = 7.2 + speedRatio * 2.8;
+      const trailHeight = 2.6 + speedRatio * 0.8;
 
       // Target camera world position: trailing behind and elevated above
       _targetCamPos
@@ -69,12 +82,37 @@ export function CameraController({ mode, vehicleStateRef }: CameraControllerProp
       currentLookAt.current.lerp(_targetLookAt, Math.min(1, delta * 7.5));
       state.camera.lookAt(currentLookAt.current);
 
-      // 3. Dynamic speed-based FOV for high-speed sensation
+      // 3. Dynamic speed-based FOV for visceral sense of speed
+      // Widens slightly as velocity increases (52° at rest -> 72° at 150+ mph)
       if ('fov' in state.camera) {
         const pCam = state.camera as THREE.PerspectiveCamera;
-        const targetFov = THREE.MathUtils.lerp(52, 64, speedFactor);
-        pCam.fov = THREE.MathUtils.lerp(pCam.fov, targetFov, delta * 3.5);
+        const targetFov = THREE.MathUtils.lerp(52, 72, speedRatio);
+        pCam.fov = THREE.MathUtils.lerp(pCam.fov, targetFov, Math.min(1, delta * 4.0));
         pCam.updateProjectionMatrix();
+      }
+
+      // 4. Subtle camera shake effect
+      // Triggers ONLY when:
+      // a) The car exceeds 100 mph (aerodynamic buffeting / chassis vibration)
+      // b) The car collides with a wall (impact impulse)
+      let highSpeedShake = 0;
+      if (speedMph > 100) {
+        // High-speed aerodynamic buffeting shake: scales smoothly above 100 mph up to ~150+ mph
+        const speedOvershoot = (speedMph - 100) / 55; // 0.0 at 100 mph, 1.0 at 155 mph
+        highSpeedShake = THREE.MathUtils.clamp(speedOvershoot * 0.065, 0, 0.09);
+      }
+
+      const totalShake = highSpeedShake + collisionShakeIntensity.current * 0.22;
+
+      if (totalShake > 0.001) {
+        const t = state.clock.getElapsedTime() * 42; // 42 Hz vibration
+        const offsetX = (Math.sin(t * 1.3) + Math.cos(t * 2.1)) * 0.5 * totalShake;
+        const offsetY = (Math.sin(t * 1.7) + Math.cos(t * 1.1)) * 0.5 * totalShake;
+        const offsetZ = (Math.cos(t * 1.9) + Math.sin(t * 0.7)) * 0.3 * totalShake;
+
+        state.camera.position.x += offsetX;
+        state.camera.position.y += offsetY;
+        state.camera.position.z += offsetZ;
       }
 
       if (orbitRef.current) {
