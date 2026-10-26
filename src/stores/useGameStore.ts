@@ -59,7 +59,9 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   setSpeedMph: (speed: number) => {
-    set({ speedMph: speed });
+    if (get().speedMph !== speed) {
+      set({ speedMph: speed });
+    }
   },
 
   clearNotice: () => {

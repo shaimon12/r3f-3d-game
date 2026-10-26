@@ -65,6 +65,12 @@ export function Vehicle({
     return { chassisNode, wheelFL, wheelFR, wheelRL, wheelRR };
   }, [clonedScene]);
 
+  // Memoized wheel array to eliminate per-frame array allocations in useFrame
+  const wheelsList = useMemo(
+    () => [wheelFL, wheelFR, wheelRL, wheelRR],
+    [wheelFL, wheelFR, wheelRL, wheelRR]
+  );
+
   // High-performance sports car suspension & wheel configuration
   const wheelRadius = 0.34;
   const suspensionRestLength = 0.28;
@@ -425,11 +431,10 @@ export function Vehicle({
       skidAudioRef.current.setVolume(THREE.MathUtils.lerp(currentSkidVol, targetSkidVolume, delta * fadeSpeed));
     }
 
-    // Update wheel mesh visual transforms
-    const wheels = [wheelFL, wheelFR, wheelRL, wheelRR];
+    // Update wheel mesh visual transforms without allocating array objects
     const rollRate = -controller.currentVehicleSpeed() / wheelRadius;
 
-    wheels.forEach((wheel, idx) => {
+    wheelsList.forEach((wheel, idx) => {
       if (!wheel) return;
 
       wheelRollRef.current[idx] += rollRate * delta;

@@ -53,8 +53,8 @@ export function Ground({
         position={[-halfW - wallThickness / 2, wallHeight / 2, 0]}
       />
 
-      {/* Visual ground surface */}
-      <mesh receiveShadow position={[0, -floorThickness / 2, 0]}>
+      {/* Visual ground surface - shadows disabled on distant 500x500 scenery to eliminate GPU lag */}
+      <mesh receiveShadow={false} position={[0, -floorThickness / 2, 0]}>
         <boxGeometry args={[width, floorThickness, depth]} />
         <meshStandardMaterial color={color} roughness={0.9} metalness={0.1} />
       </mesh>

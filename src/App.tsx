@@ -53,7 +53,7 @@ function VehicleContactShadow({
         scale={8.5}
         blur={1.6}
         far={5}
-        resolution={512}
+        resolution={256}
         color="#000000"
       />
     </group>
@@ -92,11 +92,17 @@ export function App() {
         markerRef={miniMapMarkerRef}
       />
 
-      {/* 3D WebGL Canvas */}
+      {/* 3D WebGL Canvas with Adaptive DPR and High-Performance GPU Profile */}
       <Canvas
         shadows
         camera={{ position: [-42.5, 4.5, 64], fov: 52 }}
         dpr={[1, 2]}
+        gl={{
+          powerPreference: 'high-performance',
+          antialias: true,
+          stencil: false,
+          depth: true,
+        }}
       >
         {/* React Suspense Boundary wrapping the entire 3D scene */}
         <Suspense fallback={null}>
@@ -118,17 +124,18 @@ export function App() {
             mieDirectionalG={0.8}
           />
 
-          {/* Directional Sun Light matching Sunset HDRI */}
+          {/* Directional Sun Light with reduced 1024x1024 shadow map resolution */}
           <Lights directionalIntensity={1.8} />
 
-          {/* Contact Shadows directly under the entire Track & Ramps */}
+          {/* Static Track Contact Shadows: rendered once and cached on GPU via frames={1} */}
           <ContactShadows
             position={[0, 0.02, 0]}
-            opacity={0.8}
+            opacity={0.75}
             scale={220}
-            blur={2.2}
+            blur={2.0}
             far={25}
-            resolution={1024}
+            resolution={512}
+            frames={1}
             color="#000000"
           />
 

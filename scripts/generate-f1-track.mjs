@@ -329,7 +329,8 @@ function buildContinuousBarrier(edgePoints, isOuter) {
       barrierCenter.z + s.right.z * (offsetSide * (barrierThickness * 0.45))
     );
     armco.rotation.y = angle;
-    armco.castShadow = true;
+    // Shadows disabled on distant scenery to eliminate shadow-map draw call overhead
+    armco.castShadow = false;
     barrierGroup.add(armco);
 
     // 2. Multi-Tier High-Impact Tire Barrier Stacks (Fronting the wall)
@@ -345,7 +346,7 @@ function buildContinuousBarrier(edgePoints, isOuter) {
     const tireBlock = new THREE.Mesh(tireBlockGeo, tireMat);
     tireBlock.position.set(barrierCenter.x, roadY + (barrierHeight * 0.9) * 0.5, barrierCenter.z);
     tireBlock.rotation.y = angle;
-    tireBlock.castShadow = true;
+    tireBlock.castShadow = false;
     barrierGroup.add(tireBlock);
 
     // Visual circular tire stacks embossed on the front face facing the track
@@ -428,14 +429,14 @@ gantryG.position.set(-45, 0, 50);
 [-roadHalfWidth - 1.2, roadHalfWidth + 1.2].forEach((xOffset) => {
   const tower = new THREE.Mesh(new THREE.BoxGeometry(1.2, 8.5, 1.2), materials.gantryTruss);
   tower.position.set(xOffset, 4.25, 0);
-  tower.castShadow = true;
+  tower.castShadow = false;
   gantryG.add(tower);
 });
 
 // Overhead Horizontal Truss Beam
 const trussBeam = new THREE.Mesh(new THREE.BoxGeometry(roadHalfWidth * 2 + 3.5, 1.4, 1.4), materials.gantryTruss);
 trussBeam.position.set(0, 8.2, 0);
-trussBeam.castShadow = true;
+trussBeam.castShadow = false;
 gantryG.add(trussBeam);
 
 // 5 FIA Red Starting Light Pods (The iconic "Lights Out and Away We Go!")
@@ -456,14 +457,14 @@ f1Features.add(gantryG);
 const pitWallGeo = new THREE.BoxGeometry(1.2, 1.4, 120);
 const pitWall = new THREE.Mesh(pitWallGeo, materials.pitWallConcrete);
 pitWall.position.set(-36.2, roadY + 0.7, 20);
-pitWall.castShadow = true;
+pitWall.castShadow = false;
 f1Features.add(pitWall);
 
 // Team Pit Perches & Screens along Pit Wall
 for (let z = 60; z >= -20; z -= 18) {
   const perch = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.2, 3.8), materials.gantryTruss);
   perch.position.set(-34.5, roadY + 1.1, z);
-  perch.castShadow = true;
+  perch.castShadow = false;
   f1Features.add(perch);
 
   // Monitor screens facing pit wall

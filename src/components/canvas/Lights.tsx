@@ -3,8 +3,9 @@ interface LightsProps {
 }
 
 /**
- * Scene directional lighting matching the Sunset HDRI.
- * Note: Ambient light has been removed in favor of Drei's <Environment background preset="sunset"/> HDRI.
+ * Optimized scene directional lighting matching the Sunset HDRI.
+ * Shadow map resolution reduced from 2048 to 1024 to save 75% GPU fill rate and memory,
+ * with shadow frustum tightly bounding the active circuit to maintain crisp vehicle shadows.
  */
 export function Lights({ directionalIntensity = 1.6 }: LightsProps) {
   return (
@@ -13,15 +14,15 @@ export function Lights({ directionalIntensity = 1.6 }: LightsProps) {
       position={[50, 45, -30]}
       intensity={directionalIntensity}
       color="#fff1e0"
-      shadow-mapSize-width={2048}
-      shadow-mapSize-height={2048}
-      shadow-camera-near={0.5}
-      shadow-camera-far={250}
-      shadow-camera-left={-80}
-      shadow-camera-right={80}
-      shadow-camera-top={80}
-      shadow-camera-bottom={-80}
-      shadow-bias={-0.0001}
+      shadow-mapSize-width={1024}
+      shadow-mapSize-height={1024}
+      shadow-camera-near={1.0}
+      shadow-camera-far={180}
+      shadow-camera-left={-65}
+      shadow-camera-right={95}
+      shadow-camera-top={75}
+      shadow-camera-bottom={-85}
+      shadow-bias={-0.0002}
     />
   );
 }

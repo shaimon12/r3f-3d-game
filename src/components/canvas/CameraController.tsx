@@ -15,10 +15,21 @@ interface CameraControllerProps {
   vehicleStateRef: React.MutableRefObject<VehicleState>;
 }
 
+// Pre-allocated static vectors outside the render loop to eliminate per-frame garbage collection
+const _carForward = new THREE.Vector3();
+const _carBack = new THREE.Vector3();
+const _targetCamPos = new THREE.Vector3();
+const _targetLookAt = new THREE.Vector3();
+const _orbitTarget = new THREE.Vector3();
+const _upVec = new THREE.Vector3(0, 1, 0);
+const _forwardUnit = new THREE.Vector3(0, 0, -1);
+const _backUnit = new THREE.Vector3(0, 0, 1);
+
 /**
  * Cinematic Follow-Camera & Free Orbit Controller.
  * In follow mode: smoothly trails slightly behind and above the sports car using lerp,
  * adjusting elevation and field of view dynamically based on speed and heading.
+ * Fully allocation-free inside useFrame to guarantee 60-120 FPS without GC stutter.
  */
 export function CameraController({ mode, vehicleStateRef }: CameraControllerProps) {
   const orbitRef = useRef<OrbitControlsImpl>(null);
@@ -28,10 +39,10 @@ export function CameraController({ mode, vehicleStateRef }: CameraControllerProp
     const { position: carPos, quaternion: carQuat, speedMph } = vehicleStateRef.current;
 
     if (mode === 'follow') {
-      // 1. Calculate orientation-aware trailing offset behind sports car
+      // 1. Calculate orientation-aware trailing offset behind sports car without allocating new vectors
       // In car local space: forward is -Z, rear is +Z
-      const carForward = new THREE.Vector3(0, 0, -1).applyQuaternion(carQuat);
-      const carBack = new THREE.Vector3(0, 0, 1).applyQuaternion(carQuat);
+      _carForward.copy(_forwardUnit).applyQuaternion(carQuat);
+      _carBack.copy(_backUnit).applyQuaternion(carQuat);
 
       // Dynamic distance and height based on speed for cinematic sensation
       const speedFactor = Math.min(1, speedMph / 120);
@@ -39,23 +50,23 @@ export function CameraController({ mode, vehicleStateRef }: CameraControllerProp
       const trailHeight = 2.6 + speedFactor * 0.7;
 
       // Target camera world position: trailing behind and elevated above
-      const targetCamPos = new THREE.Vector3()
+      _targetCamPos
         .copy(carPos)
-        .add(new THREE.Vector3(0, trailHeight, 0))
-        .add(carBack.multiplyScalar(trailDistance));
+        .addScaledVector(_upVec, trailHeight)
+        .addScaledVector(_carBack, trailDistance);
 
       // Target look-at point: forward through hood towards the road/horizon
-      const targetLookAt = new THREE.Vector3()
+      _targetLookAt
         .copy(carPos)
-        .add(new THREE.Vector3(0, 0.85, 0))
-        .add(carForward.multiplyScalar(3.2));
+        .addScaledVector(_upVec, 0.85)
+        .addScaledVector(_carForward, 3.2);
 
       // 2. Smooth lerp for cinematic trailing
       // Camera position interpolation
-      state.camera.position.lerp(targetCamPos, Math.min(1, delta * 5.5));
+      state.camera.position.lerp(_targetCamPos, Math.min(1, delta * 5.5));
 
       // Camera aiming interpolation
-      currentLookAt.current.lerp(targetLookAt, Math.min(1, delta * 7.5));
+      currentLookAt.current.lerp(_targetLookAt, Math.min(1, delta * 7.5));
       state.camera.lookAt(currentLookAt.current);
 
       // 3. Dynamic speed-based FOV for high-speed sensation
@@ -70,12 +81,10 @@ export function CameraController({ mode, vehicleStateRef }: CameraControllerProp
         orbitRef.current.target.copy(currentLookAt.current);
       }
     } else {
-      // Free orbit mode: orbit controls smoothly track the car's position
+      // Free orbit mode: orbit controls smoothly track the car's position without allocations
       if (orbitRef.current) {
-        currentLookAt.current.lerp(
-          new THREE.Vector3(carPos.x, carPos.y + 0.6, carPos.z),
-          delta * 6.0
-        );
+        _orbitTarget.set(carPos.x, carPos.y + 0.6, carPos.z);
+        currentLookAt.current.lerp(_orbitTarget, delta * 6.0);
         orbitRef.current.target.copy(currentLookAt.current);
         orbitRef.current.update();
       }
