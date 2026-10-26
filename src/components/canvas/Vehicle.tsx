@@ -3,7 +3,6 @@ import { useFrame } from '@react-three/fiber';
 import { useGLTF, PositionalAudio } from '@react-three/drei';
 import {
   useRapier,
-  useBeforePhysicsStep,
   RigidBody,
   type RapierRigidBody,
   type CollisionEnterPayload,
@@ -34,8 +33,8 @@ const _targetPos = new THREE.Vector3();
 // Radius 1.2m gives 2.4m width matching sports car footprint, preventing wall tunneling
 const SPHERE_RADIUS = 1.2;
 const WHEEL_RADIUS = 0.34;
-const MAX_SPEED_MPH = 150;
-const MAX_SPEED_MS = MAX_SPEED_MPH / 2.23694; // ~67.056 m/s
+const MAX_FORWARD_SPEED = 150;
+const MAX_REVERSE_SPEED = 40;
 
 export function Vehicle({
   position = [-42.5, 2.0, 56],
@@ -233,10 +232,11 @@ export function Vehicle({
     }
   };
 
-  // Run before each physics step: update arcade sphere movement inputs & linear velocity
-  useBeforePhysicsStep((stepWorld) => {
+  // Render loop & Arcade Sphere Movement Driver inside useFrame
+  useFrame((_, delta) => {
     const sphere = sphereRigidBodyRef.current;
-    if (!sphere) return;
+    const visualCar = visualCarRef.current;
+    if (!sphere || !visualCar) return;
 
     const { forward, backward, left, right, boost, handbrake, reset } = controlsRef.current;
 
@@ -253,7 +253,6 @@ export function Vehicle({
       return;
     }
 
-    const dt = stepWorld.timestep;
     const linvel = sphere.linvel();
 
     // INTERCEPT MOVEMENT INPUTS DURING COUNTDOWN:
@@ -264,158 +263,135 @@ export function Vehicle({
       sphere.setAngvel({ x: 0, y: 0, z: 0 }, true);
       forwardSpeedRef.current = 0;
       lateralSpeedRef.current = 0;
-      return;
-    }
-
-    // Read current horizontal speed components
-    const currentSpeedMs = Math.hypot(linvel.x, linvel.z);
-    const speedRatio = THREE.MathUtils.clamp(currentSpeedMs / 67, 0, 1);
-
-    // Dynamic steering lock: full lock at low speed, tighter lock at high speed for stability
-    const dynamicMaxSteer = THREE.MathUtils.lerp(0.48, 0.2, speedRatio);
-    let targetSteer = 0;
-    if (left) targetSteer += dynamicMaxSteer;
-    if (right) targetSteer -= dynamicMaxSteer;
-
-    // Smooth steering input transitions
-    steerAngleRef.current = THREE.MathUtils.lerp(
-      steerAngleRef.current,
-      targetSteer,
-      Math.min(1.0, dt * 10.0)
-    );
-
-    // Update vehicle heading yaw
-    let turnRate = 0;
-    if (currentSpeedMs < 1.0) {
-      // Pivot at rest so player can re-orient vehicle
-      if (left) turnRate += 1.35;
-      if (right) turnRate -= 1.35;
     } else {
-      const speedSign = forwardSpeedRef.current >= -0.5 ? 1 : -1;
-      const turnSensitivity = THREE.MathUtils.lerp(2.5, 1.4, speedRatio);
-      turnRate = (steerAngleRef.current / dynamicMaxSteer) * turnSensitivity * speedSign;
-    }
+      // 1. Calculate steering angle and update vehicle heading yaw based on A / D input
+      const currentSpeed = Math.hypot(linvel.x, linvel.z);
+      const speedRatio = THREE.MathUtils.clamp(currentSpeed / MAX_FORWARD_SPEED, 0, 1);
 
-    if (handbrake && currentSpeedMs > 3.0) {
-      turnRate *= 1.45; // Drift turn assist
-    }
+      // Dynamic steering lock: responsive at low speed, tighter lock at high speed for control
+      const dynamicMaxSteer = THREE.MathUtils.lerp(0.48, 0.16, speedRatio);
+      let targetSteer = 0;
+      if (left) targetSteer += dynamicMaxSteer;
+      if (right) targetSteer -= dynamicMaxSteer;
 
-    yawRef.current += turnRate * dt;
+      // Smooth steering transitions
+      steerAngleRef.current = THREE.MathUtils.lerp(
+        steerAngleRef.current,
+        targetSteer,
+        Math.min(1.0, delta * 10.0)
+      );
 
-    // Recompute heading vectors after yaw update
-    const newYaw = yawRef.current;
-    const nFx = -Math.sin(newYaw);
-    const nFz = -Math.cos(newYaw);
-    const nRx = Math.cos(newYaw);
-    const nRz = -Math.sin(newYaw);
-
-    // Current forward/lateral velocity projected onto updated heading
-    let vFwd = linvel.x * nFx + linvel.z * nFz;
-    let vLat = linvel.x * nRx + linvel.z * nRz;
-
-    // Forward Acceleration & Throttle Dynamics
-    // Target speeds: scaled to MAX_SPEED_MS (150 mph = 67.056 m/s)
-    const topForwardSpeed = boost ? MAX_SPEED_MS : MAX_SPEED_MS * 0.85;
-    const reverseTopSpeed = -18.0;
-
-    if (forward) {
-      // Multiply forward impulse/velocity by 10 to overcome linear damping
-      const accelRate = boost ? 260.0 : 180.0;
-      vFwd = Math.min(topForwardSpeed, vFwd + accelRate * dt);
-    } else if (backward) {
-      if (vFwd > 1.0) {
-        // Strong responsive braking
-        const brakeDecel = 65.0;
-        vFwd = Math.max(0, vFwd - brakeDecel * dt);
+      // Heading yaw rotation based on steering input
+      let turnRate = 0;
+      if (currentSpeed < 1.0) {
+        // Pivot at rest so player can re-orient vehicle
+        if (left) turnRate += 1.35;
+        if (right) turnRate -= 1.35;
       } else {
-        // Reverse
-        const reverseAccel = 25.0;
-        vFwd = Math.max(reverseTopSpeed, vFwd - reverseAccel * dt);
+        const speedSign = forwardSpeedRef.current >= -0.5 ? 1 : -1;
+        const turnSensitivity = THREE.MathUtils.lerp(2.6, 1.2, speedRatio);
+        turnRate = (steerAngleRef.current / dynamicMaxSteer) * turnSensitivity * speedSign;
       }
-    } else {
-      // Coasting aerodynamic & mechanical drag
-      const coastDecel = 12.0;
+
+      if (handbrake && currentSpeed > 3.0) {
+        turnRate *= 1.45; // Drift turn assist
+      }
+
+      yawRef.current += turnRate * delta;
+
+      // 2. Calculate local forward/backward vector based on heading and WASD input
+      const yaw = yawRef.current;
+      // In local vehicle space, forward is -Z (0, 0, -1), right is +X (1, 0, 0)
+      const fwdX = -Math.sin(yaw);
+      const fwdZ = -Math.cos(yaw);
+      const rightX = Math.cos(yaw);
+      const rightZ = -Math.sin(yaw);
+
+      // Decompose current velocity along local forward and right vectors
+      let vFwd = linvel.x * fwdX + linvel.z * fwdZ;
+      let vLat = linvel.x * rightX + linvel.z * rightZ;
+
+      if (forward) {
+        // W / ArrowUp: Accelerate forward
+        const accelRate = boost ? 260.0 : 180.0;
+        vFwd += accelRate * delta;
+      } else if (backward) {
+        // S / ArrowDown: Active braking if moving forward, else reverse
+        if (vFwd > 1.0) {
+          const brakeDecel = 85.0;
+          vFwd = Math.max(0, vFwd - brakeDecel * delta);
+        } else {
+          const reverseAccel = 45.0;
+          vFwd -= reverseAccel * delta;
+        }
+      } else {
+        // Coasting drag when neither W nor S is pressed
+        const coastDecel = 15.0;
+        if (vFwd > 0) {
+          vFwd = Math.max(0, vFwd - coastDecel * delta);
+        } else if (vFwd < 0) {
+          vFwd = Math.min(0, vFwd + coastDecel * delta);
+        }
+      }
+
+      // Handbrake deceleration
+      if (handbrake) {
+        const handbrakeDecel = 40.0;
+        if (vFwd > 0) {
+          vFwd = Math.max(0, vFwd - handbrakeDecel * delta);
+        }
+      }
+
+      // 3. Mathematically clamp the forward velocity magnitude strictly to a maximum of 150,
+      // and clamp the reverse velocity strictly to a maximum of 40
       if (vFwd > 0) {
-        vFwd = Math.max(0, vFwd - coastDecel * dt);
+        vFwd = Math.min(MAX_FORWARD_SPEED, vFwd);
       } else if (vFwd < 0) {
-        vFwd = Math.min(0, vFwd + coastDecel * dt);
+        vFwd = Math.max(-MAX_REVERSE_SPEED, vFwd);
       }
-    }
 
-    // Handbrake deceleration
-    if (handbrake) {
-      const handbrakeDecel = 32.0;
-      if (vFwd > 0) {
-        vFwd = Math.max(0, vFwd - handbrakeDecel * dt);
+      // Lateral tire grip vs drift
+      if (handbrake && currentSpeed > 3.0) {
+        // Handbrake drift: allow lateral sliding
+        vLat = THREE.MathUtils.lerp(vLat, 0, Math.min(1.0, delta * 3.0));
+      } else {
+        // High tire grip: rapidly eliminate sideways slip so car grips the road
+        vLat = THREE.MathUtils.lerp(vLat, 0, Math.min(1.0, delta * 15.0));
       }
+
+      forwardSpeedRef.current = vFwd;
+      lateralSpeedRef.current = vLat;
+
+      // Calculate target velocity vector in world coordinates
+      let targetVx = vFwd * fwdX + vLat * rightX;
+      let targetVz = vFwd * fwdZ + vLat * rightZ;
+
+      // Strict vector magnitude clamp
+      const targetSpeed = Math.hypot(targetVx, targetVz);
+      const maxAllowedSpeed = vFwd >= 0 ? MAX_FORWARD_SPEED : MAX_REVERSE_SPEED;
+      if (targetSpeed > maxAllowedSpeed) {
+        const scale = maxAllowedSpeed / targetSpeed;
+        targetVx *= scale;
+        targetVz *= scale;
+      }
+
+      // Move the sphere strictly by applying the target velocity vector via ref.current.setLinvel().
+      // Do NOT use setTranslation for driving, preserving the collision solver and CCD against walls.
+      // Vertical velocity (linvel.y) is preserved for natural gravity and track slope traversal.
+      sphere.setLinvel({ x: targetVx, y: linvel.y, z: targetVz }, true);
     }
 
-    // Lateral Grip & Tire Friction
-    if (handbrake && currentSpeedMs > 3.0) {
-      // Handbrake drift: allow lateral sliding
-      vLat = THREE.MathUtils.lerp(vLat, 0, Math.min(1.0, dt * 2.8));
-    } else {
-      // High tire grip: rapidly eliminate sideways slip so car grips the road
-      vLat = THREE.MathUtils.lerp(vLat, 0, Math.min(1.0, dt * 14.0));
-    }
-
-    forwardSpeedRef.current = vFwd;
-    lateralSpeedRef.current = vLat;
-
-    // Reconstruct horizontal linear velocity for Rapier
-    const newVx = vFwd * nFx + vLat * nRx;
-    const newVz = vFwd * nFz + vLat * nRz;
-
-    // Apply linear velocity directly to invisible sphere, preserving vertical gravity (linvel.y)
-    sphere.setLinvel({ x: newVx, y: linvel.y, z: newVz }, true);
-  });
-
-  // Render loop: Update visual car position/quaternion via downward raycast, audio & wheel visuals
-  useFrame((_, delta) => {
-    const sphere = sphereRigidBodyRef.current;
-    const visualCar = visualCarRef.current;
-    if (!sphere || !visualCar) return;
-
-    // Clamp the maximum linear velocity vector to a magnitude equivalent to 150 mph (~67.056 m/s)
-    let linvel = sphere.linvel();
-    const linvelMagnitude = Math.hypot(linvel.x, linvel.y, linvel.z);
-    if (linvelMagnitude > MAX_SPEED_MS) {
-      const clampFactor = MAX_SPEED_MS / linvelMagnitude;
-      sphere.setLinvel(
-        {
-          x: linvel.x * clampFactor,
-          y: linvel.y * clampFactor,
-          z: linvel.z * clampFactor,
-        },
-        true
-      );
-      linvel = sphere.linvel();
-    }
-
-    const horizSpeed = Math.hypot(linvel.x, linvel.z);
-    if (horizSpeed > MAX_SPEED_MS) {
-      const hFactor = MAX_SPEED_MS / horizSpeed;
-      sphere.setLinvel(
-        {
-          x: linvel.x * hFactor,
-          y: linvel.y,
-          z: linvel.z * hFactor,
-        },
-        true
-      );
-      linvel = sphere.linvel();
-    }
-
-    const spherePos = sphere.translation();
-    const speedMs = Math.hypot(linvel.x, linvel.z);
-    const speedMph = Math.round(speedMs * 2.23694);
+    // Telemetry updates
+    const currentLinvel = sphere.linvel();
+    const speedMs = Math.hypot(currentLinvel.x, currentLinvel.z);
+    const speedMph = Math.round(speedMs);
 
     if (onSpeedChange) {
       onSpeedChange(speedMph, speedMs);
     }
 
-    // 4. The Update Loop:
-    // Fire a Raycast straight down to find the track surface
+    // 4. Update Loop: Downward Raycast & Ground Normal Hugging
+    const spherePos = sphere.translation();
     const rayOrigin = { x: spherePos.x, y: spherePos.y + 0.5, z: spherePos.z };
     const rayDir = { x: 0, y: -1, z: 0 };
     const ray = new RAPIER.Ray(rayOrigin, rayDir);
@@ -439,8 +415,7 @@ export function Vehicle({
     }
 
     // Constantly update visual car model's position to match the invisible physics sphere's position
-    // When sphere is on the track, wheels sit precisely on the asphalt at groundY
-    // When airborne, car follows sphere height
+    // Wheels sit precisely on the asphalt at groundY, airborne drops follow sphere height
     const visualY = Math.max(groundY, spherePos.y - SPHERE_RADIUS);
     visualCar.position.set(spherePos.x, visualY, spherePos.z);
 
