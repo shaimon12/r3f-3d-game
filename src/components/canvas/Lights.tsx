@@ -1,30 +1,28 @@
 interface LightsProps {
-  ambientIntensity?: number;
   directionalIntensity?: number;
 }
 
-export function Lights({
-  ambientIntensity = 0.4,
-  directionalIntensity = 1.5,
-}: LightsProps) {
+/**
+ * Scene directional lighting matching the Sunset HDRI.
+ * Note: Ambient light has been removed in favor of Drei's <Environment background preset="sunset"/> HDRI.
+ */
+export function Lights({ directionalIntensity = 1.6 }: LightsProps) {
   return (
-    <>
-      <ambientLight intensity={ambientIntensity} />
-      <directionalLight
-        castShadow
-        position={[15, 25, 10]}
-        intensity={directionalIntensity}
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
-        shadow-camera-near={0.5}
-        shadow-camera-far={100}
-        shadow-camera-left={-25}
-        shadow-camera-right={25}
-        shadow-camera-top={25}
-        shadow-camera-bottom={-25}
-        shadow-bias={-0.0001}
-      />
-    </>
+    <directionalLight
+      castShadow
+      position={[50, 45, -30]}
+      intensity={directionalIntensity}
+      color="#fff1e0"
+      shadow-mapSize-width={2048}
+      shadow-mapSize-height={2048}
+      shadow-camera-near={0.5}
+      shadow-camera-far={250}
+      shadow-camera-left={-80}
+      shadow-camera-right={80}
+      shadow-camera-top={80}
+      shadow-camera-bottom={-80}
+      shadow-bias={-0.0001}
+    />
   );
 }
 

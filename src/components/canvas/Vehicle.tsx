@@ -11,12 +11,14 @@ import {
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { useKeyboardControls } from '@/hooks/useKeyboardControls';
+import type { VehicleState } from './CameraController';
 
 export interface VehicleProps {
   position?: [number, number, number];
   rotation?: [number, number, number];
   onSpeedChange?: (speedMph: number, speedMs?: number) => void;
   targetPosRef?: React.MutableRefObject<THREE.Vector3>;
+  vehicleStateRef?: React.MutableRefObject<VehicleState>;
 }
 
 export function Vehicle({
@@ -24,6 +26,7 @@ export function Vehicle({
   rotation = [0, 0, 0],
   onSpeedChange,
   targetPosRef,
+  vehicleStateRef,
 }: VehicleProps) {
   const chassisRigidBodyRef = useRef<RapierRigidBody>(null);
   const vehicleControllerRef = useRef<RAPIER.DynamicRayCastVehicleController | null>(null);
@@ -207,10 +210,20 @@ export function Vehicle({
       onSpeedChange(speedMph, speedMs);
     }
 
-    // Update target position ref for camera tracking
-    if (chassisRigidBodyRef.current && targetPosRef) {
+    // Update target position and full orientation state for cinematic camera tracking
+    if (chassisRigidBodyRef.current) {
       const t = chassisRigidBodyRef.current.translation();
-      targetPosRef.current.set(t.x, t.y, t.z);
+      const r = chassisRigidBodyRef.current.rotation();
+
+      if (targetPosRef) {
+        targetPosRef.current.set(t.x, t.y, t.z);
+      }
+
+      if (vehicleStateRef) {
+        vehicleStateRef.current.position.set(t.x, t.y, t.z);
+        vehicleStateRef.current.quaternion.set(r.x, r.y, r.z, r.w);
+        vehicleStateRef.current.speedMph = speedMph;
+      }
     }
 
     // Update wheel mesh visual transforms
