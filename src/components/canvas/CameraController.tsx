@@ -22,7 +22,7 @@ interface CameraControllerProps {
  */
 export function CameraController({ mode, vehicleStateRef }: CameraControllerProps) {
   const orbitRef = useRef<OrbitControlsImpl>(null);
-  const currentLookAt = useRef(new THREE.Vector3(0, 1.2, 55));
+  const currentLookAt = useRef(new THREE.Vector3(-42.5, 1.2, 50));
 
   useFrame((state, delta) => {
     const { position: carPos, quaternion: carQuat, speedMph } = vehicleStateRef.current;

@@ -46,7 +46,7 @@ export const HUD: React.FC<HUDProps> = ({ cameraMode, onToggleCamera }) => {
           />
         </div>
 
-        <div className="car-label">Apex GT Hypercar • Dual Swan-Neck Aero</div>
+        <div className="car-label">Apex GT • F1 Grand Prix Circuit (588m)</div>
       </div>
 
       {/* 2. TOP-CENTER: Lap Counter & Live Millisecond Timer */}

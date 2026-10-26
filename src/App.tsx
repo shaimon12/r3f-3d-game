@@ -64,7 +64,7 @@ export function App() {
 
   // Shared reactive state ref for vehicle position, orientation, and velocity
   const vehicleStateRef = useRef<VehicleState>({
-    position: new THREE.Vector3(0, 0.6, 60),
+    position: new THREE.Vector3(-42.5, 0.6, 56),
     quaternion: new THREE.Quaternion(),
     speedMph: 0,
   });
@@ -84,7 +84,7 @@ export function App() {
       {/* 3D WebGL Canvas */}
       <Canvas
         shadows
-        camera={{ position: [0, 4.5, 68], fov: 52 }}
+        camera={{ position: [-42.5, 4.5, 64], fov: 52 }}
         dpr={[1, 2]}
       >
         {/* Render-loop Timer Driver */}
@@ -128,7 +128,7 @@ export function App() {
             {/* 500x500 Ground Plane with 4 Invisible Perimeter Boundary Walls */}
             <Ground size={[500, 500]} color="#141820" gridColor="#2a3444" />
 
-            {/* Stylized Race Track with Mega Launch Ramp & Static Trimesh Colliders */}
+            {/* Professional Formula 1 Grand Prix Circuit with Continuous Tire Barriers */}
             <Track />
 
             {/* Three Invisible Rigid Body Sensor Checkpoints to Track Valid Laps */}
@@ -136,7 +136,7 @@ export function App() {
 
             {/* Aerodynamic Sports Car with Doubled Engine Force & Tuned Rigid Body */}
             <Vehicle
-              position={[0, 0.6, 60]}
+              position={[-42.5, 0.6, 56]}
               onSpeedChange={(mph) => setSpeedMph(mph)}
               vehicleStateRef={vehicleStateRef}
             />

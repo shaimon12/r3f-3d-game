@@ -23,7 +23,7 @@ export interface VehicleProps {
 }
 
 export function Vehicle({
-  position = [0, 0.6, 60],
+  position = [-42.5, 0.6, 56],
   rotation = [0, 0, 0],
   onSpeedChange,
   targetPosRef,
