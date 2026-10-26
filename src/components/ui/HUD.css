@@ -7,107 +7,242 @@
   pointer-events: none;
   z-index: 10;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-rows: auto 1fr auto;
   padding: 24px;
   box-sizing: border-box;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  color: #f0f4f8;
+  color: #f1f5f9;
 }
 
 .hud-card {
   pointer-events: auto;
-  background: rgba(13, 17, 23, 0.78);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgba(11, 15, 23, 0.82);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  padding: 16px 22px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  max-width: fit-content;
+  border-radius: 14px;
+  padding: 16px 20px;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.5);
 }
 
-/* --- Top-Left Speedometer UI Overlay --- */
-.speed-overlay-top-left {
+/* ==========================================
+   1. TOP-LEFT: Dynamic Speedometer
+   ========================================== */
+.top-left {
+  grid-column: 1;
+  grid-row: 1;
   align-self: start;
   justify-self: start;
   min-width: 220px;
 }
 
-.speed-header {
+.speedo-header {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 4px;
 }
 
-.live-dot {
+.live-status-dot {
   width: 8px;
   height: 8px;
-  background-color: #22c55e;
+  background-color: #10b981;
   border-radius: 50%;
-  box-shadow: 0 0 8px #22c55e;
-  animation: pulse-dot 1.5s infinite;
+  box-shadow: 0 0 8px #10b981;
+  animation: pulse-live 1.5s infinite;
 }
 
-@keyframes pulse-dot {
+@keyframes pulse-live {
   0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(0.85); }
+  50% { opacity: 0.4; transform: scale(0.85); }
 }
 
-.speed-title {
+.telemetry-label {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 1.5px;
   color: #94a3b8;
 }
 
-.speed-readout {
+.gear-badge {
+  margin-left: auto;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.speedo-display {
   display: flex;
   align-items: baseline;
   gap: 8px;
   margin: 4px 0 8px 0;
 }
 
-.speed-number {
+.speedo-digits {
   font-size: 46px;
   font-weight: 900;
   line-height: 1;
   color: #38bdf8;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -1px;
+  letter-spacing: -1.5px;
 }
 
-.speed-unit {
+.speedo-unit {
   font-size: 16px;
   font-weight: 700;
   color: #cbd5e1;
-  letter-spacing: 0.5px;
 }
 
-.speed-bar-track {
+.speedo-bar-track {
   width: 100%;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 3px;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
   overflow: hidden;
   margin-bottom: 8px;
 }
 
-.speed-bar-progress {
+.speedo-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #38bdf8, #818cf8, #f43f5e);
-  border-radius: 3px;
+  background: linear-gradient(90deg, #38bdf8 0%, #818cf8 60%, #f43f5e 100%);
+  border-radius: 4px;
   transition: width 0.08s ease-out;
 }
 
-.vehicle-caption {
+.car-label {
   font-size: 11px;
   color: #64748b;
 }
 
-/* --- Top-Right Camera Switcher --- */
+/* ==========================================
+   2. TOP-CENTER: Lap Counter & Live Timer
+   ========================================== */
+.top-center {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  justify-self: center;
+  min-width: 280px;
+  text-align: center;
+  border-color: rgba(56, 189, 248, 0.25);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55), 0 0 20px rgba(56, 189, 248, 0.1);
+}
+
+.lap-badge-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.lap-counter-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #e11d48, #be123c);
+  color: #fff;
+  padding: 4px 12px;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(225, 29, 72, 0.4);
+}
+
+.lap-tag {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+}
+
+.lap-val {
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.checkpoints-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cp-dot {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #64748b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.2s ease;
+}
+
+.cp-dot.passed {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border-color: #10b981;
+}
+
+.cp-dot.next {
+  border-color: #38bdf8;
+  color: #38bdf8;
+  animation: pulse-cp 1.2s infinite;
+}
+
+@keyframes pulse-cp {
+  0%, 100% { box-shadow: 0 0 0 rgba(56, 189, 248, 0); }
+  50% { box-shadow: 0 0 8px rgba(56, 189, 248, 0.5); }
+}
+
+.live-timer-readout {
+  font-family: 'SF Mono', Monaco, Menlo, 'Courier New', monospace;
+  font-size: 38px;
+  font-weight: 800;
+  color: #f8fafc;
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+  margin: 4px 0 8px 0;
+  text-shadow: 0 0 16px rgba(56, 189, 248, 0.35);
+}
+
+.timing-stats-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.stat-col {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stat-label {
+  font-weight: 700;
+  letter-spacing: 0.8px;
+}
+
+.stat-time {
+  font-family: monospace;
+  font-weight: 700;
+  color: #cbd5e1;
+}
+
+.stat-time.gold {
+  color: #fbbf24;
+  text-shadow: 0 0 8px rgba(251, 191, 36, 0.4);
+}
+
+/* ==========================================
+   3. TOP-RIGHT: Camera Mode Switcher
+   ========================================== */
 .top-right {
+  grid-column: 3;
+  grid-row: 1;
   align-self: start;
   justify-self: end;
 }
@@ -131,8 +266,52 @@
   transform: translateY(-1px);
 }
 
-/* --- Bottom-Left Controls --- */
+/* ==========================================
+   4. CENTER SCREEN: Lap Banner Notification
+   ========================================== */
+.lap-notification-banner {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: center;
+  justify-self: center;
+  pointer-events: none;
+  animation: pop-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes pop-in {
+  0% { transform: scale(0.7); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.notification-content {
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(20px);
+  border: 2px solid #38bdf8;
+  border-radius: 12px;
+  padding: 16px 28px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.7), 0 0 24px rgba(56, 189, 248, 0.4);
+}
+
+.notification-icon {
+  font-size: 28px;
+}
+
+.notification-text {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #ffffff;
+}
+
+/* ==========================================
+   5. BOTTOM-LEFT: Controls Reminder
+   ========================================== */
 .bottom-left {
+  grid-column: 1;
+  grid-row: 3;
   align-self: end;
   justify-self: start;
 }

@@ -1,37 +1,99 @@
 import React from 'react';
+import { useGameStore, formatLapTime } from '@/stores/useGameStore';
 import './HUD.css';
 
 interface HUDProps {
-  speedMph: number;
   cameraMode: 'follow' | 'orbit';
   onToggleCamera: () => void;
 }
 
-export const HUD: React.FC<HUDProps> = ({ speedMph, cameraMode, onToggleCamera }) => {
+export const HUD: React.FC<HUDProps> = ({ cameraMode, onToggleCamera }) => {
+  const laps = useGameStore((state) => state.laps);
+  const currentTime = useGameStore((state) => state.currentTime);
+  const bestTime = useGameStore((state) => state.bestTime);
+  const lastLapTime = useGameStore((state) => state.lastLapTime);
+  const checkpointsPassed = useGameStore((state) => state.checkpointsPassed);
+  const nextCheckpoint = useGameStore((state) => state.nextCheckpoint);
+  const lapCompletedNotice = useGameStore((state) => state.lapCompletedNotice);
+  const speedMph = useGameStore((state) => state.speedMph);
+
+  // Speed bar percentage (0 - 140 mph)
+  const speedRatio = Math.min(100, (speedMph / 140) * 100);
+
+  // Gear detection
+  const currentGear = speedMph === 0 ? 'P' : 'D';
+
   return (
     <div className="game-hud">
-      {/* Top Left: Primary Speedometer & Velocity Overlay */}
-      <div className="hud-card speed-overlay-top-left">
-        <div className="speed-header">
-          <span className="live-dot" />
-          <span className="speed-title">VEHICLE VELOCITY</span>
+      {/* 1. TOP-LEFT: Dynamic High-Tech Speedometer & Telemetry */}
+      <div className="hud-card top-left speedo-overlay">
+        <div className="speedo-header">
+          <span className="live-status-dot" />
+          <span className="telemetry-label">SPEEDOMETER</span>
+          <span className="gear-badge">{currentGear}</span>
         </div>
-        <div className="speed-readout">
-          <span className="speed-number">{speedMph}</span>
-          <span className="speed-unit">MPH</span>
+
+        <div className="speedo-display">
+          <span className="speedo-digits">{speedMph}</span>
+          <span className="speedo-unit">MPH</span>
         </div>
-        <div className="speed-bar-track">
+
+        {/* Dynamic Multi-Color Speed Bar */}
+        <div className="speedo-bar-track">
           <div
-            className="speed-bar-progress"
-            style={{ width: `${Math.min(100, (speedMph / 120) * 100)}%` }}
+            className="speedo-bar-fill"
+            style={{ width: `${speedRatio}%` }}
           />
         </div>
-        <div className="vehicle-caption">
-          Apex GT Hypercar • 500x500 Stunt Circuit
+
+        <div className="car-label">Apex GT Hypercar • Dual Swan-Neck Aero</div>
+      </div>
+
+      {/* 2. TOP-CENTER: Lap Counter & Live Millisecond Timer */}
+      <div className="hud-card top-center timer-lap-overlay">
+        <div className="lap-badge-row">
+          <div className="lap-counter-badge">
+            <span className="lap-tag">LAP</span>
+            <span className="lap-val">{laps}</span>
+          </div>
+          <div className="checkpoints-pills">
+            {[1, 2, 3].map((cpId) => {
+              const isPassed = checkpointsPassed.includes(cpId);
+              const isNext = nextCheckpoint === cpId;
+              return (
+                <div
+                  key={cpId}
+                  className={`cp-dot ${isPassed ? 'passed' : ''} ${isNext ? 'next' : ''}`}
+                  title={`Checkpoint ${cpId}`}
+                >
+                  CP {cpId}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Live Millisecond Lap Timer */}
+        <div className="live-timer-readout">
+          {formatLapTime(currentTime)}
+        </div>
+
+        {/* Best Lap & Last Lap Times */}
+        <div className="timing-stats-row">
+          <div className="stat-col">
+            <span className="stat-label">BEST:</span>
+            <span className="stat-time gold">{formatLapTime(bestTime)}</span>
+          </div>
+          {lastLapTime !== null && (
+            <div className="stat-col">
+              <span className="stat-label">LAST:</span>
+              <span className="stat-time">{formatLapTime(lastLapTime)}</span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Top Right: Camera Switcher */}
+      {/* 3. TOP-RIGHT: Camera Mode Switcher */}
       <div className="hud-card top-right">
         <button className="camera-toggle-btn" onClick={onToggleCamera}>
           <span className="cam-icon">🎥</span>
@@ -39,11 +101,21 @@ export const HUD: React.FC<HUDProps> = ({ speedMph, cameraMode, onToggleCamera }
         </button>
       </div>
 
-      {/* Bottom Left: Vehicle Controls Reference */}
+      {/* 4. CENTER SCREEN: Animated Lap/Record Flash Notification */}
+      {lapCompletedNotice && (
+        <div className="lap-notification-banner">
+          <div className="notification-content">
+            <span className="notification-icon">🏁</span>
+            <span className="notification-text">{lapCompletedNotice}</span>
+          </div>
+        </div>
+      )}
+
+      {/* 5. BOTTOM-LEFT: Input Controls Reminder */}
       <div className="hud-card bottom-left">
-        <div className="controls-header">CONTROLS</div>
+        <div className="controls-header">VEHICLE CONTROLS</div>
         <div className="key-row">
-          <kbd className="key">W</kbd> <span>Accelerate (+30% Force)</span>
+          <kbd className="key">W</kbd> <span>Accelerate (8840 N)</span>
         </div>
         <div className="key-row">
           <kbd className="key">S</kbd> <span>Brake / Reverse</span>
@@ -52,10 +124,10 @@ export const HUD: React.FC<HUDProps> = ({ speedMph, cameraMode, onToggleCamera }
           <kbd className="key">A</kbd> <kbd className="key">D</kbd> <span>Steering</span>
         </div>
         <div className="key-row">
-          <kbd className="key wide">SPACE</kbd> <span>Handbrake</span>
+          <kbd className="key wide">SPACE</kbd> <span>Handbrake Drift</span>
         </div>
         <div className="key-row">
-          <kbd className="key">SHIFT</kbd> <span>Turbo Boost</span>
+          <kbd className="key">SHIFT</kbd> <span>Turbo Boost (15k N)</span>
         </div>
         <div className="key-row">
           <kbd className="key">R</kbd> <span>Reset to Track</span>
