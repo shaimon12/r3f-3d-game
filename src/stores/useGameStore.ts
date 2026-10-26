@@ -8,10 +8,12 @@ export interface GameState {
   lastLapTime: number | null;
   isTimerRunning: boolean;
 
-  // Circuit Checkpoint Progression (1 -> 2 -> 3 -> 1)
+  // Circuit Checkpoint Progression (0 -> 1 -> 2 -> 3 -> 0)
   checkpointsPassed: number[];
-  nextCheckpoint: number;
+  targetCheckpoint: number; // Current required checkpoint index (0, 1, 2, 3)
+  nextCheckpoint: number; // Alias for UI compatibility
   lapCompletedNotice: string | null;
+  wrongWayWarning: boolean;
 
   // Vehicle Telemetry
   speedMph: number;
@@ -44,8 +46,10 @@ export const useGameStore = create<GameState>((set, get) => ({
   lastLapTime: null,
   isTimerRunning: false,
   checkpointsPassed: [],
+  targetCheckpoint: 0,
   nextCheckpoint: 1,
   lapCompletedNotice: null,
+  wrongWayWarning: false,
   speedMph: 0,
 
   tickTimer: (deltaMs: number) => {
@@ -59,72 +63,122 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   clearNotice: () => {
-    set({ lapCompletedNotice: null });
+    set({ lapCompletedNotice: null, wrongWayWarning: false });
   },
 
+  /**
+   * Overhauled sequential checkpoint trigger handler:
+   * Prevents backwards driving and enforces strict 0 -> 1 -> 2 -> 3 -> 0 progression.
+   * Checkpoint 0: Start / Finish Line (0%)
+   * Checkpoint 1: Sector 1 Chicane Exit (25%)
+   * Checkpoint 2: Sector 2 DRS Straight (50%)
+   * Checkpoint 3: Sector 3 Hairpin Apex (75%)
+   */
   passCheckpoint: (checkpointId: number) => {
     const state = get();
 
-    // Checkpoint 1: Start / Finish Line
-    if (checkpointId === 1) {
-      // 1. Initial race start when driving across start line for the first time
-      if (!state.isTimerRunning || state.checkpointsPassed.length === 0) {
-        set({
-          isTimerRunning: true,
-          currentTime: 0,
-          checkpointsPassed: [1],
-          nextCheckpoint: 2,
-          lapCompletedNotice: 'RACE STARTED!',
-        });
+    // 1. Checkpoint 0: Start / Finish Line
+    if (checkpointId === 0) {
+      // Valid lap completion: ONLY increment when car crosses Start/Finish IF it has
+      // successfully triggered checkpoints 1, 2, and 3 in the correct sequential order!
+      const hasTriggered123InOrder =
+        state.checkpointsPassed.length === 3 &&
+        state.checkpointsPassed[0] === 1 &&
+        state.checkpointsPassed[1] === 2 &&
+        state.checkpointsPassed[2] === 3;
 
-        if (noticeTimeout) clearTimeout(noticeTimeout);
-        noticeTimeout = setTimeout(() => get().clearNotice(), 2500);
-        return;
-      }
-
-      // 2. Lap Completion: Valid only if Checkpoints 1, 2, and 3 were all passed in sequence!
-      if (state.checkpointsPassed.includes(2) && state.checkpointsPassed.includes(3)) {
+      if (hasTriggered123InOrder) {
         const completedTime = state.currentTime;
         const isNewRecord = state.bestTime === null || completedTime < state.bestTime;
         const newBest = isNewRecord ? completedTime : state.bestTime;
 
         const noticeText = isNewRecord
-          ? `NEW BEST LAP! ${formatLapTime(completedTime)}`
+          ? `NEW RECORD! ${formatLapTime(completedTime)}`
           : `LAP ${state.laps} COMPLETE! ${formatLapTime(completedTime)}`;
+
+        if (noticeTimeout) clearTimeout(noticeTimeout);
+        noticeTimeout = setTimeout(() => get().clearNotice(), 3500);
 
         set({
           laps: state.laps + 1,
           lastLapTime: completedTime,
           bestTime: newBest,
           currentTime: 0,
-          checkpointsPassed: [1],
-          nextCheckpoint: 2,
+          checkpointsPassed: [],
+          targetCheckpoint: 0, // Reset the checkpoint target to 0 upon a valid lap completion
+          nextCheckpoint: 1,
           lapCompletedNotice: noticeText,
+          wrongWayWarning: false,
         });
-
-        if (noticeTimeout) clearTimeout(noticeTimeout);
-        noticeTimeout = setTimeout(() => get().clearNotice(), 3500);
         return;
       }
+
+      // Initial race start: crossing Start/Finish from the grid for the first time
+      if (!state.isTimerRunning) {
+        if (noticeTimeout) clearTimeout(noticeTimeout);
+        noticeTimeout = setTimeout(() => get().clearNotice(), 2500);
+
+        set({
+          isTimerRunning: true,
+          currentTime: 0,
+          checkpointsPassed: [],
+          targetCheckpoint: 1,
+          nextCheckpoint: 1,
+          lapCompletedNotice: 'RACE STARTED - GREEN FLAG!',
+          wrongWayWarning: false,
+        });
+        return;
+      }
+
+      // Crossed finish line out of order (backwards or skipped checkpoints):
+      // Lap counter does NOT increment.
+      return;
     }
 
-    // Checkpoint 2: Mid-circuit (North Bend after ramp jump)
-    if (checkpointId === 2) {
-      if (state.checkpointsPassed.includes(1) && !state.checkpointsPassed.includes(2)) {
+    // 2. Checkpoint 1: Sector 1 Chicane Exit (25%)
+    if (checkpointId === 1) {
+      const isTargetingCp1 = state.targetCheckpoint === 1 || state.targetCheckpoint === 0;
+      if (isTargetingCp1 && !state.checkpointsPassed.includes(1)) {
         set({
-          checkpointsPassed: [...state.checkpointsPassed, 2],
-          nextCheckpoint: 3,
+          checkpointsPassed: [1],
+          targetCheckpoint: 2,
+          nextCheckpoint: 2,
+          wrongWayWarning: false,
         });
       }
       return;
     }
 
-    // Checkpoint 3: Back-straight section
-    if (checkpointId === 3) {
-      if (state.checkpointsPassed.includes(2) && !state.checkpointsPassed.includes(3)) {
+    // 3. Checkpoint 2: Sector 2 DRS Straight (50%)
+    if (checkpointId === 2) {
+      if (
+        state.targetCheckpoint === 2 &&
+        state.checkpointsPassed.length === 1 &&
+        state.checkpointsPassed[0] === 1
+      ) {
         set({
-          checkpointsPassed: [...state.checkpointsPassed, 3],
-          nextCheckpoint: 1,
+          checkpointsPassed: [1, 2],
+          targetCheckpoint: 3,
+          nextCheckpoint: 3,
+          wrongWayWarning: false,
+        });
+      }
+      return;
+    }
+
+    // 4. Checkpoint 3: Sector 3 Hairpin Apex (75%)
+    if (checkpointId === 3) {
+      if (
+        state.targetCheckpoint === 3 &&
+        state.checkpointsPassed.length === 2 &&
+        state.checkpointsPassed[0] === 1 &&
+        state.checkpointsPassed[1] === 2
+      ) {
+        set({
+          checkpointsPassed: [1, 2, 3],
+          targetCheckpoint: 0, // Advance target to Start/Finish line (Checkpoint 0)
+          nextCheckpoint: 0,
+          wrongWayWarning: false,
         });
       }
       return;
@@ -140,8 +194,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       lastLapTime: null,
       isTimerRunning: false,
       checkpointsPassed: [],
+      targetCheckpoint: 0,
       nextCheckpoint: 1,
       lapCompletedNotice: null,
+      wrongWayWarning: false,
       speedMph: 0,
     });
   },

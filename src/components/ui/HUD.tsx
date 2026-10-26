@@ -13,7 +13,7 @@ export const HUD: React.FC<HUDProps> = ({ cameraMode, onToggleCamera }) => {
   const bestTime = useGameStore((state) => state.bestTime);
   const lastLapTime = useGameStore((state) => state.lastLapTime);
   const checkpointsPassed = useGameStore((state) => state.checkpointsPassed);
-  const nextCheckpoint = useGameStore((state) => state.nextCheckpoint);
+  const targetCheckpoint = useGameStore((state) => state.targetCheckpoint);
   const lapCompletedNotice = useGameStore((state) => state.lapCompletedNotice);
   const speedMph = useGameStore((state) => state.speedMph);
 
@@ -57,16 +57,25 @@ export const HUD: React.FC<HUDProps> = ({ cameraMode, onToggleCamera }) => {
             <span className="lap-val">{laps}</span>
           </div>
           <div className="checkpoints-pills">
-            {[1, 2, 3].map((cpId) => {
-              const isPassed = checkpointsPassed.includes(cpId);
-              const isNext = nextCheckpoint === cpId;
+            {[
+              { id: 1, label: 'CP 1' },
+              { id: 2, label: 'CP 2' },
+              { id: 3, label: 'CP 3' },
+              { id: 0, label: 'S/F' },
+            ].map(({ id, label }) => {
+              const isPassed = id === 0 ? false : checkpointsPassed.includes(id);
+              const isNext =
+                id === 0
+                  ? targetCheckpoint === 0 && checkpointsPassed.length === 3
+                  : targetCheckpoint === id || (id === 1 && targetCheckpoint === 0 && checkpointsPassed.length === 0);
+
               return (
                 <div
-                  key={cpId}
+                  key={id}
                   className={`cp-dot ${isPassed ? 'passed' : ''} ${isNext ? 'next' : ''}`}
-                  title={`Checkpoint ${cpId}`}
+                  title={id === 0 ? 'Start / Finish Line' : `Checkpoint ${id}`}
                 >
-                  CP {cpId}
+                  {label}
                 </div>
               );
             })}
