@@ -379,6 +379,95 @@ export function Vehicle({
       // Do NOT use setTranslation for driving, preserving the collision solver and CCD against walls.
       // Vertical velocity (linvel.y) is preserved for natural gravity and track slope traversal.
       sphere.setLinvel({ x: targetVx, y: linvel.y, z: targetVz }, true);
+
+      // =========================================================================
+      // PRAGMATIC MATHEMATICAL FALLBACK: HORIZONTAL WALL RAYCAST REPULSION
+      // =========================================================================
+      // Fire short, horizontal raycasts from the sphere's center to the left, right, and front.
+      // If a raycast detects the track's wall mesh at a distance shorter than the sphere's
+      // radius plus a small buffer, immediately apply an opposing impulse (repulsion force)
+      // to the sphere's RigidBody to bounce it away from the wall.
+      const currentPos = sphere.translation();
+      const sphereCenter = { x: currentPos.x, y: currentPos.y, z: currentPos.z };
+      const currentLv = sphere.linvel();
+
+      // Probe directions: Front, Left, Right, Front-Left, Front-Right
+      const probeDirs = [
+        { x: fwdX, y: 0, z: fwdZ, isFront: true }, // Front
+        { x: -rightX, y: 0, z: -rightZ, isFront: false }, // Left
+        { x: rightX, y: 0, z: rightZ, isFront: false }, // Right
+        { x: (fwdX - rightX) * 0.7071, y: 0, z: (fwdZ - rightZ) * 0.7071, isFront: true }, // Front-Left
+        { x: (fwdX + rightX) * 0.7071, y: 0, z: (fwdZ + rightZ) * 0.7071, isFront: true }, // Front-Right
+      ];
+
+      const wallBuffer = 0.35;
+      const wallThreshold = SPHERE_RADIUS + wallBuffer; // 1.55m
+      const maxProbeDist = wallThreshold + 0.6; // 2.15m
+
+      for (let i = 0; i < probeDirs.length; i++) {
+        const pDir = probeDirs[i];
+        const pRay = new RAPIER.Ray(sphereCenter, { x: pDir.x, y: pDir.y, z: pDir.z });
+        const wallHit = world.castRayAndGetNormal(
+          pRay,
+          maxProbeDist,
+          true,
+          undefined,
+          undefined,
+          undefined,
+          sphere
+        );
+
+        // Verify hit is a vertical wall barrier (|normal.y| < 0.6) and closer than radius + buffer
+        if (wallHit && wallHit.timeOfImpact < wallThreshold && Math.abs(wallHit.normal.y) < 0.6) {
+          let repX = wallHit.normal.x;
+          let repZ = wallHit.normal.z;
+          const repLen = Math.hypot(repX, repZ);
+
+          if (repLen > 0.001) {
+            repX /= repLen;
+            repZ /= repLen;
+          } else {
+            repX = -pDir.x;
+            repZ = -pDir.z;
+          }
+
+          // Calculate velocity component heading directly into the wall
+          const velIntoWall = -(currentLv.x * repX + currentLv.z * repZ);
+          const bounceSpeed = Math.max(22.0, velIntoWall * 1.45);
+          const repImpulse = 1500 * bounceSpeed; // Mass * bounce speed
+
+          // Immediately apply opposing impulse (repulsion force) to bounce the sphere away
+          sphere.applyImpulse({ x: repX * repImpulse, y: 0, z: repZ * repImpulse }, true);
+
+          // If front wall impact, reverse forward speed reference to rebound naturally
+          if (pDir.isFront && forwardSpeedRef.current > 0) {
+            forwardSpeedRef.current = Math.min(0, forwardSpeedRef.current * -0.4);
+          }
+
+          // Trigger collision shake for cinematic camera feedback
+          if (vehicleStateRef) {
+            vehicleStateRef.current.collisionShake = Math.max(
+              vehicleStateRef.current.collisionShake || 0,
+              0.8
+            );
+          }
+
+          // Trigger metallic crash sound effect with debounce
+          const now = performance.now();
+          if (crashAudioRef.current && now - lastCrashTimestamp.current > 250) {
+            lastCrashTimestamp.current = now;
+            const audio = crashAudioRef.current;
+            if (audio.context && audio.context.state === 'suspended') {
+              audio.context.resume();
+            }
+            if (audio.isPlaying) audio.stop();
+            audio.setVolume(0.85);
+            audio.play();
+          }
+
+          break; // Process one barrier bounce per frame
+        }
+      }
     }
 
     // Telemetry updates
