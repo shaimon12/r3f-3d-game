@@ -513,6 +513,69 @@ drsGantry.add(drsSign);
 f1Features.add(drsGantry);
 
 // ==========================================
+// 6.5. Generate Simplified Physics Collision Mesh
+// A seamless continuous manifold ribbon for the road surface + vertical perimeter barrier walls.
+// Eliminates all internal step edges, jagged tire facets, and decal box snags!
+// ==========================================
+const colPositions = [];
+const colIndices = [];
+
+const colRoadHalfWidth = roadHalfWidth + 1.3; // 8.8m (covers road + curbs)
+const colBarrierHeight = 2.2; // 2.2m tall containment walls
+
+for (let i = 0; i < numSamples; i++) {
+  const s = trackSamples[i];
+  const left = new THREE.Vector3().copy(s.pt).addScaledVector(s.right, -colRoadHalfWidth);
+  const right = new THREE.Vector3().copy(s.pt).addScaledVector(s.right, colRoadHalfWidth);
+
+  // 0: Road Left at Y = roadY
+  colPositions.push(left.x, roadY, left.z);
+  // 1: Road Right at Y = roadY
+  colPositions.push(right.x, roadY, right.z);
+  // 2: Outer Wall Top (above right)
+  colPositions.push(right.x, colBarrierHeight, right.z);
+  // 3: Inner Wall Top (above left)
+  colPositions.push(left.x, colBarrierHeight, left.z);
+}
+
+for (let i = 0; i < numSamples; i++) {
+  const next = (i + 1) % numSamples;
+  const b1 = i * 4;
+  const b2 = next * 4;
+
+  const L1 = b1 + 0, R1 = b1 + 1, W_R1 = b1 + 2, W_L1 = b1 + 3;
+  const L2 = b2 + 0, R2 = b2 + 1, W_R2 = b2 + 2, W_L2 = b2 + 3;
+
+  // 1. Smooth Road Surface Ribbon (Normal UP)
+  colIndices.push(L1, L2, R1);
+  colIndices.push(R1, L2, R2);
+
+  // 2. Continuous Outer Barrier Wall (Double-sided for robust collision)
+  colIndices.push(R1, W_R1, R2);
+  colIndices.push(R2, W_R1, W_R2);
+  colIndices.push(R2, W_R1, R1);
+  colIndices.push(W_R2, W_R1, R2);
+
+  // 3. Continuous Inner Barrier Wall (Double-sided for robust collision)
+  colIndices.push(L1, L2, W_L1);
+  colIndices.push(L2, W_L2, W_L1);
+  colIndices.push(W_L1, L2, L1);
+  colIndices.push(W_L1, W_L2, L2);
+}
+
+const colGeo = new THREE.BufferGeometry();
+colGeo.setAttribute('position', new THREE.Float32BufferAttribute(colPositions, 3));
+colGeo.setIndex(colIndices);
+colGeo.computeVertexNormals();
+
+const collisionMesh = new THREE.Mesh(
+  colGeo,
+  new THREE.MeshBasicMaterial({ name: 'Collision_Material', visible: false })
+);
+collisionMesh.name = 'Simplified_Collision_Mesh';
+root.add(collisionMesh);
+
+// ==========================================
 // 7. EXPORT F1 TRACK TO BINARY GLTF (.glb)
 // ==========================================
 const exporter = new GLTFExporter();

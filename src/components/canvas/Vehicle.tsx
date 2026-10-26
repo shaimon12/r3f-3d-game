@@ -161,62 +161,88 @@ export function Vehicle({
   }, []);
 
   // Collision handling & metallic crash sound trigger
+  // Specifically ignores vertical suspension bounces and triggers only on high-velocity wall impacts
   const handleCollision = (payload: CollisionEnterPayload) => {
     const chassis = chassisRigidBodyRef.current;
     if (!chassis) return;
 
     const now = performance.now();
-    // 120ms debounce to prevent multiple triggers from consecutive manifold contacts
-    if (now - lastCrashTimestamp.current < 120) return;
+    // 250ms debounce to prevent multiple triggers from consecutive manifold contacts on barrier scrape
+    if (now - lastCrashTimestamp.current < 250) return;
 
-    // Linear velocity vector of vehicle
-    const linvel = chassis.linvel();
-    const speed = Math.sqrt(linvel.x ** 2 + linvel.y ** 2 + linvel.z ** 2);
+    // Extract collision normal from contact manifold
+    let normalX = 0;
+    let normalY = 1;
+    let normalZ = 0;
+    let hasNormal = false;
 
-    // Collision normal impact velocity
-    let normalSpeed = speed;
     try {
       const normal = payload.manifold.normal();
       if (normal) {
-        normalSpeed = Math.abs(linvel.x * normal.x + linvel.y * normal.y + linvel.z * normal.z);
+        normalX = normal.x;
+        normalY = normal.y;
+        normalZ = normal.z;
+        hasNormal = true;
       }
     } catch {
-      normalSpeed = speed;
+      hasNormal = false;
+    }
+
+    // IGNORE STANDARD SUSPENSION BOUNCES & GROUND BOTTOMING:
+    // If contact normal is predominantly vertical (|normalY| > 0.6), the contact is with
+    // the road surface, ground plane, or curb top face.
+    // True crash impacts with tire barriers/walls are predominantly horizontal (|normalY| <= 0.6).
+    if (hasNormal && Math.abs(normalY) > 0.6) {
+      return;
+    }
+
+    // Linear velocity vector of vehicle
+    const linvel = chassis.linvel();
+
+    // Normal velocity component directed into the barrier/wall surface
+    let normalSpeed = 0;
+    if (hasNormal) {
+      normalSpeed = Math.abs(linvel.x * normalX + linvel.y * normalY + linvel.z * normalZ);
+    } else {
+      // Fallback: horizontal speed
+      normalSpeed = Math.sqrt(linvel.x ** 2 + linvel.z ** 2);
     }
 
     // Check contact impulse from solver if available
-    let maxImpulse = 0;
+    let maxSolverImpulse = 0;
     try {
       const numContacts = payload.manifold.numContacts();
       for (let i = 0; i < numContacts; i++) {
         const imp = payload.manifold.contactImpulse(i) || 0;
-        if (imp > maxImpulse) maxImpulse = imp;
+        if (imp > maxSolverImpulse) maxSolverImpulse = imp;
       }
     } catch {
-      maxImpulse = 0;
+      maxSolverImpulse = 0;
     }
 
-    // Vehicle mass = 1900 kg. Calculate impact impulse force: J = m * deltaV
+    // Vehicle mass = 1900 kg. Calculate impact impulse force: J = m * deltaV_normal
     const vehicleMass = 1900;
-    const velocityForce = vehicleMass * Math.max(normalSpeed, speed * 0.45);
-    const totalImpactForce = Math.max(velocityForce, maxImpulse);
+    const kinematicImpulse = vehicleMass * normalSpeed;
+    const totalImpactForce = Math.max(kinematicImpulse, maxSolverImpulse);
 
-    // Minimum impact threshold: 5500 N*s (approx 6.5 mph hard impact into barrier/wall)
-    const minThreshold = 5500;
-    const maxForceScale = 42000; // Force of high-speed ~50+ mph crash
+    // HIGH-VELOCITY WALL IMPACT THRESHOLD:
+    // Increased to 26,000 N*s (requires at least ~14 m/s or 31 mph direct impact into a barrier).
+    // Standard suspension bounces and mild grazing are completely ignored.
+    const minThreshold = 26000;
+    const maxForceScale = 75000; // Force of severe ~70+ mph head-on barrier crash
 
     if (totalImpactForce > minThreshold) {
       lastCrashTimestamp.current = now;
 
-      // Scale volume dynamically based on impact force (from 0.25 for a solid bump up to 1.0 for a hard crash)
+      // Scale volume dynamically based on impact force (from 0.35 up to 1.0 for a hard crash)
       const normalizedForce = THREE.MathUtils.clamp(
         (totalImpactForce - minThreshold) / (maxForceScale - minThreshold),
         0,
         1
       );
-      const crashVolume = THREE.MathUtils.clamp(0.25 + normalizedForce * 0.75, 0.25, 1.0);
+      const crashVolume = THREE.MathUtils.clamp(0.35 + normalizedForce * 0.65, 0.35, 1.0);
 
-      // Randomize pitch slightly (0.92 to 1.08) for acoustic variation on repeated impacts
+      // Acoustic pitch randomization for metallic impact variation
       const crashPitch = THREE.MathUtils.clamp(0.95 + (Math.random() - 0.5) * 0.16, 0.85, 1.15);
 
       if (crashAudioRef.current) {
@@ -433,10 +459,10 @@ export function Vehicle({
       angularDamping={2.8}
       onCollisionEnter={handleCollision}
     >
-      {/* Central Chassis Tub Collider */}
+      {/* Central Chassis Tub Collider with high underbody clearance to eliminate snagging */}
       <CuboidCollider
-        args={[0.85, 0.16, 1.3]}
-        position={[0, 0.38, 0]}
+        args={[0.82, 0.14, 1.25]}
+        position={[0, 0.40, 0]}
         mass={1200}
         friction={0.4}
         restitution={0.02}
@@ -444,8 +470,8 @@ export function Vehicle({
 
       {/* Elevated Front Nose Collider */}
       <CuboidCollider
-        args={[0.75, 0.12, 0.6]}
-        position={[0, 0.45, -1.6]}
+        args={[0.72, 0.12, 0.55]}
+        position={[0, 0.46, -1.6]}
         mass={350}
         friction={0.3}
         restitution={0.02}
@@ -453,8 +479,8 @@ export function Vehicle({
 
       {/* Elevated Rear Tail Collider */}
       <CuboidCollider
-        args={[0.80, 0.14, 0.6]}
-        position={[0, 0.46, 1.6]}
+        args={[0.76, 0.12, 0.55]}
+        position={[0, 0.48, 1.6]}
         mass={350}
         friction={0.3}
         restitution={0.02}
