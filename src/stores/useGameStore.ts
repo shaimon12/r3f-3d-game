@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 
+export type MatchState = 'countdown' | 'racing' | 'finished';
+
 export interface GameState {
+  // Match Lifecycle State Machine ('countdown' | 'racing' | 'finished')
+  matchState: MatchState;
+  setMatchState: (matchState: MatchState) => void;
+
   // Laps & Timing
   laps: number;
   currentTime: number; // in milliseconds
@@ -40,6 +46,7 @@ export function formatLapTime(ms: number | null): string {
 let noticeTimeout: NodeJS.Timeout | null = null;
 
 export const useGameStore = create<GameState>((set, get) => ({
+  matchState: 'countdown',
   laps: 1,
   currentTime: 0,
   bestTime: null,
@@ -52,8 +59,15 @@ export const useGameStore = create<GameState>((set, get) => ({
   wrongWayWarning: false,
   speedMph: 0,
 
+  setMatchState: (matchState: MatchState) => {
+    set({
+      matchState,
+      isTimerRunning: matchState === 'racing',
+    });
+  },
+
   tickTimer: (deltaMs: number) => {
-    if (get().isTimerRunning) {
+    if (get().isTimerRunning && get().matchState === 'racing') {
       set((state) => ({ currentTime: state.currentTime + deltaMs }));
     }
   },
@@ -190,6 +204,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   resetGame: () => {
     if (noticeTimeout) clearTimeout(noticeTimeout);
     set({
+      matchState: 'countdown',
       laps: 1,
       currentTime: 0,
       bestTime: null,

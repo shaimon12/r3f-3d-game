@@ -12,6 +12,7 @@ import { CameraController, type VehicleState } from './components/canvas/CameraC
 import { MiniMapDriver } from './components/canvas/MiniMapDriver';
 import { HUD } from './components/ui/HUD';
 import { LoadingScreen } from './components/ui/LoadingScreen';
+import { CountdownOverlay } from './components/ui/CountdownOverlay';
 import { useGameStore } from './stores/useGameStore';
 import './App.css';
 
@@ -84,6 +85,9 @@ export function App() {
     <div className="canvas-container">
       {/* HTML Loading Screen Overlay: Remains active until all .glb assets and colliders fully load */}
       <LoadingScreen />
+
+      {/* Pre-Race Countdown State Machine Overlay: Displays traffic lights and '3, 2, 1, GO!' */}
+      <CountdownOverlay />
 
       {/* Sleek, Modern HTML Overlay for Lap Counter, Millisecond Timer, Speedometer & GPS Mini-Map */}
       <HUD

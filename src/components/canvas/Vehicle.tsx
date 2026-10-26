@@ -12,6 +12,7 @@ import {
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { useKeyboardControls } from '@/hooks/useKeyboardControls';
+import { useGameStore } from '@/stores/useGameStore';
 import type { VehicleState } from './CameraController';
 
 export interface VehicleProps {
@@ -29,6 +30,7 @@ export function Vehicle({
   targetPosRef,
   vehicleStateRef,
 }: VehicleProps) {
+  const matchState = useGameStore((state) => state.matchState);
   const chassisRigidBodyRef = useRef<RapierRigidBody>(null);
   const vehicleControllerRef = useRef<RAPIER.DynamicRayCastVehicleController | null>(null);
   const { world } = useRapier();
@@ -309,6 +311,18 @@ export function Vehicle({
     controller.setWheelSteering(0, steerAngleRef.current);
     controller.setWheelSteering(1, steerAngleRef.current);
 
+    // INTERCEPT MOVEMENT INPUTS DURING COUNTDOWN:
+    // If matchState is 'countdown', do NOT apply any forces to the vehicle's rigid body
+    // until the state changes to 'racing'. Lock wheel brakes to hold grid position.
+    if (matchState === 'countdown') {
+      for (let i = 0; i < 4; i++) {
+        controller.setWheelEngineForce(i, 0);
+        controller.setWheelBrake(i, maxBrakeForce);
+      }
+      controller.updateVehicle(stepWorld.timestep);
+      return;
+    }
+
     const currentSpeed = controller.currentVehicleSpeed();
     const enginePower = boost ? maxEngineForce * boostMultiplier : maxEngineForce;
 
@@ -380,12 +394,33 @@ export function Vehicle({
     // ==========================================
     // 1. Continuous Engine Loop: Smoothly clamped pitch without audio glitching
     if (engineAudioRef.current && engineAudioRef.current.isPlaying) {
-      // Calculate target pitch and strictly clamp to safe acoustic envelope [0.75, 2.30]
-      const targetPitch = THREE.MathUtils.clamp(0.75 + (speedMph / 60) * 1.30, 0.75, 2.30);
+      let targetPitch = 0.80;
+      let targetVolume = 0.35;
 
-      // Smooth lerp to prevent abrupt frequency jumps
+      if (matchState === 'countdown') {
+        // PRE-RACE ENGINE REVVING ON STARTING GRID:
+        // Allow the engine pitch audio to increase when 'W' is pressed so the player can rev their engine
+        const isRevving = controlsRef.current.forward;
+        if (isRevving) {
+          targetPitch = controlsRef.current.boost ? 2.25 : 1.90;
+          targetVolume = 0.85;
+        } else {
+          targetPitch = 0.80;
+          targetVolume = 0.35;
+        }
+      } else {
+        // STANDARD RACING DYNAMICS: pitch scales dynamically with vehicle velocity
+        targetPitch = THREE.MathUtils.clamp(0.75 + (speedMph / 60) * 1.30, 0.75, 2.30);
+        const isThrottling = controlsRef.current.forward || controlsRef.current.backward;
+        targetVolume = isThrottling
+          ? THREE.MathUtils.clamp(0.70 + (speedMph / 120) * 0.25, 0.70, 0.95)
+          : THREE.MathUtils.clamp(0.35 + (speedMph / 120) * 0.25, 0.35, 0.60);
+      }
+
+      // Smooth lerp for responsive revving and acoustic pitch stability
       const currentPitch = engineAudioRef.current.playbackRate ?? 1.0;
-      const lerpedPitch = THREE.MathUtils.lerp(currentPitch, targetPitch, delta * 4.5);
+      const pitchLerpSpeed = matchState === 'countdown' ? (controlsRef.current.forward ? 7.0 : 4.0) : 4.5;
+      const lerpedPitch = THREE.MathUtils.lerp(currentPitch, targetPitch, delta * pitchLerpSpeed);
       const safePitch = THREE.MathUtils.clamp(lerpedPitch, 0.75, 2.30);
 
       if (Number.isFinite(safePitch)) {
@@ -393,24 +428,23 @@ export function Vehicle({
       }
 
       // Smooth dynamic volume scaling
-      const isThrottling = controlsRef.current.forward || controlsRef.current.backward;
-      const targetVolume = isThrottling
-        ? THREE.MathUtils.clamp(0.70 + (speedMph / 120) * 0.25, 0.70, 0.95)
-        : THREE.MathUtils.clamp(0.35 + (speedMph / 120) * 0.25, 0.35, 0.60);
-
       const currentVol = engineAudioRef.current.getVolume();
-      const safeVol = THREE.MathUtils.clamp(THREE.MathUtils.lerp(currentVol, targetVolume, delta * 4.0), 0.1, 1.0);
+      const safeVol = THREE.MathUtils.clamp(
+        THREE.MathUtils.lerp(currentVol, targetVolume, delta * 4.5),
+        0.1,
+        1.0
+      );
       engineAudioRef.current.setVolume(safeVol);
     }
 
-    // 2. Secondary Tire-Screeching Sound Effect: Triggers on high angular velocity (drifting)
+    // 2. Secondary Tire-Screeching Sound Effect: Triggers on high angular velocity (drifting) during racing
     if (skidAudioRef.current && chassisRigidBodyRef.current) {
       const angvel = chassisRigidBodyRef.current.angvel();
       const yawSpeed = Math.abs(angvel.y); // Angular velocity around Y-axis (rad/s)
       const driftThreshold = 1.15; // Threshold in rad/s
 
       const isHandbrakeSlide = controlsRef.current.handbrake && speedMs > 3.0;
-      const isDrifting = (yawSpeed > driftThreshold && speedMs > 4.5) || isHandbrakeSlide;
+      const isDrifting = matchState === 'racing' && ((yawSpeed > driftThreshold && speedMs > 4.5) || isHandbrakeSlide);
 
       let targetSkidVolume = 0;
       if (isDrifting) {
