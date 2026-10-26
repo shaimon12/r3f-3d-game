@@ -106,13 +106,13 @@ export function Vehicle({
     });
 
     for (let i = 0; i < 4; i++) {
-      // Tighten suspension stiffness so the car stays firmly planted on the road
-      controller.setWheelSuspensionStiffness(i, 130.0);
-      controller.setWheelMaxSuspensionTravel(i, 0.20);
-      // High tire friction grip to simulate asphalt grip and eliminate icy sliding
-      controller.setWheelFrictionSlip(i, 8.5);
-      controller.setWheelSuspensionCompression(i, 8.5);
-      controller.setWheelSuspensionRelaxation(i, 5.5);
+      // Ultra-stiff, planted racing suspension to keep car grounded at 150+ mph
+      controller.setWheelSuspensionStiffness(i, 240.0);
+      controller.setWheelMaxSuspensionTravel(i, 0.12);
+      // High asphalt friction grip to maintain traction without spinning out
+      controller.setWheelFrictionSlip(i, 12.5);
+      controller.setWheelSuspensionCompression(i, 14.0);
+      controller.setWheelSuspensionRelaxation(i, 9.5);
     }
 
     vehicleControllerRef.current = controller;
@@ -273,10 +273,9 @@ export function Vehicle({
 
   // Driving parameters
   const steerAngleRef = useRef(0);
-  const maxSteerAngle = 0.50;
-  const maxEngineForce = 8840; // Doubled engine force
-  const boostMultiplier = 1.70;
-  const maxBrakeForce = 220;
+  const maxEngineForce = 62000; // Increased by >600% to overpower damping and achieve 150+ mph
+  const boostMultiplier = 1.60; // Delivers ~99,200 N under nitrous boost
+  const maxBrakeForce = 1400; // Scaled braking force for high-speed deceleration
 
   const spawnPos = useRef(position);
 
@@ -358,14 +357,26 @@ export function Vehicle({
     const controller = vehicleControllerRef.current;
     if (!controller) return;
 
+    // Convert speed to MPH (1 m/s = 2.23694 mph)
+    const currentSpeed = controller.currentVehicleSpeed();
+    const speedMs = Number.isFinite(currentSpeed) ? Math.abs(currentSpeed) : 0;
+    const speedMph = Math.round(speedMs * 2.23694);
+    if (onSpeedChange) {
+      onSpeedChange(speedMph, speedMs);
+    }
+
     // 1. Input smoothing using MathUtils.lerp in the useFrame loop
-    // Transitions the steering angle gradually rather than snapping instantly
+    // High-speed adaptive steering: At low speeds (0-35 mph), allows full ~0.46 rad (~26°) lock for hairpins.
+    // At high speeds (100-150+ mph), dynamically scales down to ~0.16 rad (~9°) for smooth high-speed sweepers without spinouts.
+    const speedFactor = THREE.MathUtils.clamp(speedMph / 140, 0, 1);
+    const dynamicMaxSteer = THREE.MathUtils.lerp(0.46, 0.16, speedFactor);
+
     const { left, right } = controlsRef.current;
     let targetSteer = 0;
-    if (left) targetSteer += maxSteerAngle;
-    if (right) targetSteer -= maxSteerAngle;
+    if (left) targetSteer += dynamicMaxSteer;
+    if (right) targetSteer -= dynamicMaxSteer;
 
-    const steerSmoothingSpeed = 5.0; // Responsive yet gradual transition
+    const steerSmoothingSpeed = 4.8; // Responsive yet gradual transition
     steerAngleRef.current = THREE.MathUtils.lerp(
       steerAngleRef.current,
       targetSteer,
@@ -375,14 +386,6 @@ export function Vehicle({
     // Apply smoothed steering angle directly to the vehicle controller front wheels
     controller.setWheelSteering(0, steerAngleRef.current);
     controller.setWheelSteering(1, steerAngleRef.current);
-
-    // Convert speed to MPH (1 m/s = 2.23694 mph)
-    const currentSpeed = controller.currentVehicleSpeed();
-    const speedMs = Number.isFinite(currentSpeed) ? Math.abs(currentSpeed) : 0;
-    const speedMph = Math.round(speedMs * 2.23694);
-    if (onSpeedChange) {
-      onSpeedChange(speedMph, speedMs);
-    }
 
     // Update target position and full orientation state for cinematic camera tracking
     if (chassisRigidBodyRef.current) {
@@ -420,12 +423,12 @@ export function Vehicle({
           targetVolume = 0.35;
         }
       } else {
-        // STANDARD RACING DYNAMICS: pitch scales dynamically with vehicle velocity
-        targetPitch = THREE.MathUtils.clamp(0.75 + (speedMph / 60) * 1.30, 0.75, 2.30);
+        // STANDARD RACING DYNAMICS: pitch scales smoothly up to 150+ mph
+        targetPitch = THREE.MathUtils.clamp(0.75 + (speedMph / 150) * 1.45, 0.75, 2.35);
         const isThrottling = controlsRef.current.forward || controlsRef.current.backward;
         targetVolume = isThrottling
-          ? THREE.MathUtils.clamp(0.70 + (speedMph / 120) * 0.25, 0.70, 0.95)
-          : THREE.MathUtils.clamp(0.35 + (speedMph / 120) * 0.25, 0.35, 0.60);
+          ? THREE.MathUtils.clamp(0.70 + (speedMph / 160) * 0.25, 0.70, 0.98)
+          : THREE.MathUtils.clamp(0.35 + (speedMph / 160) * 0.25, 0.35, 0.65);
       }
 
       // Smooth lerp for responsive revving and acoustic pitch stability
@@ -506,8 +509,8 @@ export function Vehicle({
       type="dynamic"
       canSleep={false}
       ccd={true}
-      linearDamping={0.80}
-      angularDamping={4.5}
+      linearDamping={0.50}
+      angularDamping={7.0}
       onCollisionEnter={handleCollision}
     >
       {/* Explicitly defined vehicle hitbox scaled 5% larger than the visual 3D mesh */}

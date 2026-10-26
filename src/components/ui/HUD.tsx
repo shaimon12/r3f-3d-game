@@ -19,11 +19,18 @@ export const HUD: React.FC<HUDProps> = ({ cameraMode, onToggleCamera, markerRef 
   const lapCompletedNotice = useGameStore((state) => state.lapCompletedNotice);
   const speedMph = useGameStore((state) => state.speedMph);
 
-  // Speed bar percentage (0 - 140 mph)
-  const speedRatio = Math.min(100, (speedMph / 140) * 100);
+  // Speed bar percentage (0 - 180 mph)
+  const speedRatio = Math.min(100, (speedMph / 180) * 100);
 
-  // Gear detection
-  const currentGear = speedMph === 0 ? 'P' : 'D';
+  // Dynamic sequential race transmission gear indicator
+  const currentGear =
+    speedMph === 0 ? 'P' :
+    speedMph < 30 ? '1' :
+    speedMph < 55 ? '2' :
+    speedMph < 85 ? '3' :
+    speedMph < 115 ? '4' :
+    speedMph < 140 ? '5' :
+    speedMph < 165 ? '6' : '7';
 
   return (
     <div className="game-hud">
