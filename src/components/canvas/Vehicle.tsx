@@ -30,13 +30,13 @@ const _rayDirRight = new THREE.Vector3();
 // Bounding Box-adjusted physics constants based on exact 3D model dimensions:
 // - Car Model Box: width 1.98m, height 1.18m, length 4.50m (tires bottom out at local y = -0.43)
 // - Track Model Box: width 150.3m, height 8.5m, length 228.4m
-// - Sphere Radius: 1.0m (2.0m diameter perfectly matches car's 1.98m width so it hits walls properly)
-// - Impulse Multiplier: 1000 (punchy, responsive acceleration without runaway velocity)
-// - Speed Governor: 60 m/s (~134 mph safe cap to prevent trimesh wall tunneling)
-const SPHERE_RADIUS = 1.0;
+// - Sphere Radius: 1.5m (thickened collider physically resists passing through thin trimesh walls)
+// - Impulse Multiplier: 150 (drastically reduced for controlled, stable acceleration)
+// - Hard Velocity Clamp: 30 m/s (~67 mph safe max speed via setLinvel)
+const SPHERE_RADIUS = 1.5;
 const WHEEL_RADIUS = 0.34;
-const IMPULSE_MULTIPLIER = 1000;
-const MAX_SAFE_SPEED_MS = 60;
+const IMPULSE_MULTIPLIER = 150;
+const MAX_SAFE_SPEED = 30;
 
 export function Vehicle({
   position = [-42.5, 10.0, 56],
@@ -232,11 +232,6 @@ export function Vehicle({
       return;
     }
 
-    const vel = sphere.linvel();
-    const linvel = vel;
-    const velMagnitude = Math.hypot(vel.x, vel.y, vel.z);
-    const currentSpeed = Math.hypot(vel.x, vel.z);
-
     // If forward key is pressed during pre-race countdown, start racing immediately
     if (forward && matchState === 'countdown') {
       useGameStore.getState().setMatchState('racing');
@@ -269,29 +264,45 @@ export function Vehicle({
     const dirX = forwardVector.x;
     const dirZ = forwardVector.z;
 
-    // 3. Dialed Back Thrust & Speed Governor:
-    // IMPULSE_MULTIPLIER is scaled to 1000 for punchy, controllable acceleration
+    // 3. Thrust Application (reduced IMPULSE_MULTIPLIER to 150 for controlled acceleration)
     const boostMult = boost ? 1.4 : 1.0;
     const impulse = IMPULSE_MULTIPLIER * boostMult * delta;
 
     if (forward) {
       // Ensure sphereRigidBodyRef.current.wakeUp() is called so Rapier doesn't put sphere to sleep
       sphere.wakeUp();
-      // Speed Governor: If magnitude exceeds safe limit (60 m/s), do NOT apply any more forward impulse
-      if (velMagnitude < MAX_SAFE_SPEED_MS) {
-        sphere.applyImpulse({ x: dirX * impulse, y: 0, z: dirZ * impulse }, true);
-      }
+      sphere.applyImpulse({ x: dirX * impulse, y: 0, z: dirZ * impulse }, true);
     } else if (backward) {
       sphere.wakeUp();
       const reverseImpulse = IMPULSE_MULTIPLIER * 0.5 * delta;
-      if (velMagnitude < 20) {
-        sphere.applyImpulse({ x: -dirX * reverseImpulse, y: 0, z: -dirZ * reverseImpulse }, true);
-      }
+      sphere.applyImpulse({ x: -dirX * reverseImpulse, y: 0, z: -dirZ * reverseImpulse }, true);
     }
+
+    // =========================================================================
+    // HARD VELOCITY CLAMP
+    // Immediately after applying impulse, read current velocity. If magnitude exceeds
+    // safe max speed (30 m/s), normalize and multiply by 30, forcefully overwriting
+    // the sphere's linear velocity via setLinvel.
+    // =========================================================================
+    const vel = sphere.linvel();
+    const velMagnitude = Math.hypot(vel.x, vel.y, vel.z);
+    if (velMagnitude > MAX_SAFE_SPEED) {
+      const scale = MAX_SAFE_SPEED / velMagnitude;
+      sphere.setLinvel(
+        {
+          x: vel.x * scale,
+          y: vel.y * scale,
+          z: vel.z * scale,
+        },
+        true
+      );
+    }
+
+    const currentVel = sphere.linvel();
 
     // 4. Lateral tire grip: counteract sideways slide so the sphere tracks along heading
     const rightVector = new THREE.Vector3(1, 0, 0).applyQuaternion(visualCar.quaternion);
-    const latSpeed = linvel.x * rightVector.x + linvel.z * rightVector.z;
+    const latSpeed = currentVel.x * rightVector.x + currentVel.z * rightVector.z;
     const gripFactor = handbrake ? 0.05 : 0.25;
     sphere.applyImpulse(
       { x: -rightVector.x * latSpeed * gripFactor, y: 0, z: -rightVector.z * latSpeed * gripFactor },
@@ -301,7 +312,7 @@ export function Vehicle({
     // =========================================================================
     // 5. ACTIVE RAYCAST BUMPERS (THE FORCEFIELD)
     // Fire horizontal Rapier raycasts from center of sphere strictly local Left & Right.
-    // If either detects a wall hit < 1.2m, instantly apply massive lateral repulsion.
+    // If either detects a wall hit < 1.7m (0.2m outside 1.5m radius), instantly apply lateral repulsion.
     // =========================================================================
     const spherePos = sphere.translation();
 
@@ -314,7 +325,7 @@ export function Vehicle({
     _rayDirRight.y = 0;
     _rayDirRight.normalize();
 
-    const maxRayDist = 1.2; // Sphere radius is 1.0m, buffer is 0.2m
+    const maxRayDist = SPHERE_RADIUS + 0.2; // 1.7m (0.2m outside 1.5m sphere)
 
     const leftRay = new rapier.Ray(spherePos, _rayDirLeft);
     const hitLeft = world.castRay(leftRay, maxRayDist, true, undefined, undefined, undefined, sphere);
@@ -322,10 +333,10 @@ export function Vehicle({
     const rightRay = new rapier.Ray(spherePos, _rayDirRight);
     const hitRight = world.castRay(rightRay, maxRayDist, true, undefined, undefined, undefined, sphere);
 
-    if (hitLeft && !hitLeft.collider.isSensor() && hitLeft.timeOfImpact < 1.2) {
+    if (hitLeft && !hitLeft.collider.isSensor() && hitLeft.timeOfImpact < maxRayDist) {
       // Wall detected on local Left -> shove forcefully to the Right
-      const penetration = Math.max(0.01, 1.2 - hitLeft.timeOfImpact);
-      const vIntoWall = Math.max(0, linvel.x * _rayDirLeft.x + linvel.z * _rayDirLeft.z);
+      const penetration = Math.max(0.01, maxRayDist - hitLeft.timeOfImpact);
+      const vIntoWall = Math.max(0, currentVel.x * _rayDirLeft.x + currentVel.z * _rayDirLeft.z);
       const repulsionStrength = 80 + penetration * 250 + vIntoWall * 5;
       sphere.wakeUp();
       sphere.applyImpulse(
@@ -334,10 +345,10 @@ export function Vehicle({
       );
     }
 
-    if (hitRight && !hitRight.collider.isSensor() && hitRight.timeOfImpact < 1.2) {
+    if (hitRight && !hitRight.collider.isSensor() && hitRight.timeOfImpact < maxRayDist) {
       // Wall detected on local Right -> shove forcefully to the Left
-      const penetration = Math.max(0.01, 1.2 - hitRight.timeOfImpact);
-      const vIntoWall = Math.max(0, linvel.x * _rayDirRight.x + linvel.z * _rayDirRight.z);
+      const penetration = Math.max(0.01, maxRayDist - hitRight.timeOfImpact);
+      const vIntoWall = Math.max(0, currentVel.x * _rayDirRight.x + currentVel.z * _rayDirRight.z);
       const repulsionStrength = 80 + penetration * 250 + vIntoWall * 5;
       sphere.wakeUp();
       sphere.applyImpulse(
@@ -347,7 +358,9 @@ export function Vehicle({
     }
 
     // Telemetry updates
-    const speedMs = currentSpeed;
+    const finalVel = sphere.linvel();
+    const linvel = finalVel;
+    const speedMs = Math.hypot(finalVel.x, finalVel.z);
     const speedMph = Math.round(speedMs * 2.237);
     if (onSpeedChange) {
       onSpeedChange(speedMph, speedMs);
@@ -356,8 +369,8 @@ export function Vehicle({
     // =========================================================================
     // VISUAL CAR DECOUPLING: match position & heading yaw cleanly
     // =========================================================================
-    // Offset Y so wheel bottoms (at local y = -0.43) touch ground flush with sphere bottom (radius 1.0)
-    const visualY = spherePos.y - 0.57;
+    // Offset Y so wheel bottoms (at local y = -0.43) touch ground flush with sphere bottom (radius SPHERE_RADIUS)
+    const visualY = spherePos.y - (SPHERE_RADIUS - 0.43);
     visualCar.position.set(spherePos.x, visualY, spherePos.z);
     visualCar.rotation.y = yawRef.current;
 
@@ -445,7 +458,7 @@ export function Vehicle({
         type="dynamic"
         canSleep={false}
         ccd={true}
-        linearDamping={1}
+        linearDamping={3}
         angularDamping={2}
         restitution={0.5}
         friction={0.1}
