@@ -24,47 +24,54 @@ export function Ground({
   const wallThickness = 4; // Thick walls prevent tunneling at high speeds
 
   return (
-    <RigidBody type="fixed" colliders={false} friction={1.0} restitution={0.1}>
-      {/* 1. Ground floor collider */}
-      <CuboidCollider
-        args={[halfW, floorThickness / 2, halfD]}
-        position={[0, -floorThickness / 2, 0]}
-      />
+    <>
+      {/* 1. Ground floor collider with explicit name for collision filtering */}
+      <RigidBody name="ground" type="fixed" colliders={false} friction={1.0} restitution={0.1}>
+        <CuboidCollider
+          name="ground"
+          args={[halfW, floorThickness / 2, halfD]}
+          position={[0, -floorThickness / 2, 0]}
+        />
+        {/* Visual ground surface - shadows disabled on distant 500x500 scenery to eliminate GPU lag */}
+        <mesh name="ground" receiveShadow={false} position={[0, -floorThickness / 2, 0]}>
+          <boxGeometry args={[width, floorThickness, depth]} />
+          <meshStandardMaterial color={color} roughness={0.9} metalness={0.1} />
+        </mesh>
+        {/* Prototyping reference grid */}
+        <gridHelper
+          args={[width, width / 2, gridColor, '#12161f']}
+          position={[0, 0.005, 0]}
+        />
+      </RigidBody>
 
-      {/* 2. Four invisible boundary walls around perimeter */}
-      {/* North Wall (+Z) */}
-      <CuboidCollider
-        args={[halfW, wallHeight / 2, wallThickness / 2]}
-        position={[0, wallHeight / 2, halfD + wallThickness / 2]}
-      />
-      {/* South Wall (-Z) */}
-      <CuboidCollider
-        args={[halfW, wallHeight / 2, wallThickness / 2]}
-        position={[0, wallHeight / 2, -halfD - wallThickness / 2]}
-      />
-      {/* East Wall (+X) */}
-      <CuboidCollider
-        args={[wallThickness / 2, wallHeight / 2, halfD]}
-        position={[halfW + wallThickness / 2, wallHeight / 2, 0]}
-      />
-      {/* West Wall (-X) */}
-      <CuboidCollider
-        args={[wallThickness / 2, wallHeight / 2, halfD]}
-        position={[-halfW - wallThickness / 2, wallHeight / 2, 0]}
-      />
-
-      {/* Visual ground surface - shadows disabled on distant 500x500 scenery to eliminate GPU lag */}
-      <mesh receiveShadow={false} position={[0, -floorThickness / 2, 0]}>
-        <boxGeometry args={[width, floorThickness, depth]} />
-        <meshStandardMaterial color={color} roughness={0.9} metalness={0.1} />
-      </mesh>
-
-      {/* Prototyping reference grid */}
-      <gridHelper
-        args={[width, width / 2, gridColor, '#12161f']}
-        position={[0, 0.005, 0]}
-      />
-    </RigidBody>
+      {/* 2. Four invisible boundary walls around 500x500 world perimeter */}
+      <RigidBody name="wall" type="fixed" colliders={false} friction={0.6} restitution={0.2}>
+        {/* North Wall (+Z) */}
+        <CuboidCollider
+          name="boundary-wall"
+          args={[halfW, wallHeight / 2, wallThickness / 2]}
+          position={[0, wallHeight / 2, halfD + wallThickness / 2]}
+        />
+        {/* South Wall (-Z) */}
+        <CuboidCollider
+          name="boundary-wall"
+          args={[halfW, wallHeight / 2, wallThickness / 2]}
+          position={[0, wallHeight / 2, -halfD - wallThickness / 2]}
+        />
+        {/* East Wall (+X) */}
+        <CuboidCollider
+          name="boundary-wall"
+          args={[wallThickness / 2, wallHeight / 2, halfD]}
+          position={[halfW + wallThickness / 2, wallHeight / 2, 0]}
+        />
+        {/* West Wall (-X) */}
+        <CuboidCollider
+          name="boundary-wall"
+          args={[wallThickness / 2, wallHeight / 2, halfD]}
+          position={[-halfW - wallThickness / 2, wallHeight / 2, 0]}
+        />
+      </RigidBody>
+    </>
   );
 }
 

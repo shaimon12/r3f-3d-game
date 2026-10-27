@@ -141,14 +141,60 @@ export function Vehicle({
   }, []);
 
   // Collision handling & metallic crash sound trigger
-  // Specifically ignores vertical ground contact and triggers only on horizontal wall impacts
+  // STRICT FILTERING:
+  // 1. Checks event.other.rigidBodyObject.name and event.other.colliderObject.name
+  // 2. Filters out any ground, floor, road, asphalt, track, curb, or checkpoint geometry
+  // 3. Sound ONLY plays if the object hit is NOT the ground AND is explicitly a wall/barrier
+  // 4. AND totalImpulse is extremely high (severe collision >= 50,000 N*s)
   const handleCollision = (payload: CollisionEnterPayload) => {
     const sphere = sphereRigidBodyRef.current;
     if (!sphere) return;
 
-    const now = performance.now();
-    if (now - lastCrashTimestamp.current < 250) return;
+    // Check names of the collided body and collider
+    const otherRbName = (payload.other?.rigidBodyObject?.name || '').toLowerCase();
+    const otherColliderName = (payload.other?.colliderObject?.name || '').toLowerCase();
 
+    // 1. Strictly filter out the ground / floor / track road / asphalt / curbs / checkpoints
+    const isFloorOrGround =
+      otherRbName.includes('ground') ||
+      otherRbName.includes('floor') ||
+      otherRbName.includes('road') ||
+      otherRbName.includes('track') ||
+      otherRbName.includes('asphalt') ||
+      otherRbName.includes('terrain') ||
+      otherRbName.includes('curb') ||
+      otherRbName.includes('rumble') ||
+      otherRbName.includes('circuit') ||
+      otherRbName.includes('checkpoint') ||
+      otherColliderName.includes('ground') ||
+      otherColliderName.includes('floor') ||
+      otherColliderName.includes('road') ||
+      otherColliderName.includes('track') ||
+      otherColliderName.includes('asphalt') ||
+      otherColliderName.includes('terrain') ||
+      otherColliderName.includes('curb') ||
+      otherColliderName.includes('rumble') ||
+      otherColliderName.includes('circuit') ||
+      otherColliderName.includes('checkpoint');
+
+    if (isFloorOrGround) {
+      return;
+    }
+
+    // 2. Must explicitly be a wall, barrier, or bumper
+    const isWall =
+      otherRbName.includes('wall') ||
+      otherRbName.includes('barrier') ||
+      otherRbName.includes('bumper') ||
+      otherColliderName.includes('wall') ||
+      otherColliderName.includes('barrier') ||
+      otherColliderName.includes('bumper');
+
+    if (!isWall) {
+      return;
+    }
+
+    // 3. Normal check: Walls are vertical barriers; contact normal must be predominantly horizontal (|normalY| <= 0.3)
     let normalX = 0;
     let normalY = 1;
     let normalZ = 0;
@@ -166,69 +212,70 @@ export function Vehicle({
       hasNormal = false;
     }
 
-    // IGNORE VERTICAL GROUND CONTACT:
-    // If contact normal is predominantly vertical (|normalY| > 0.4), it is contact with the road
-    if (!hasNormal || Math.abs(normalY) > 0.4) {
+    if (!hasNormal || Math.abs(normalY) > 0.3) {
       return;
+    }
+
+    // 4. Calculate total contact impulse
+    let totalSolverImpulse = 0;
+    try {
+      const numContacts = payload.manifold.numContacts();
+      for (let i = 0; i < numContacts; i++) {
+        totalSolverImpulse += payload.manifold.contactImpulse(i) || 0;
+      }
+    } catch {
+      totalSolverImpulse = 0;
     }
 
     const linvel = sphere.linvel();
     const normalSpeed = Math.abs(linvel.x * normalX + linvel.z * normalZ);
-    if (normalSpeed < 4.0) {
-      return;
-    }
-
-    let maxSolverImpulse = 0;
-    try {
-      const numContacts = payload.manifold.numContacts();
-      for (let i = 0; i < numContacts; i++) {
-        const imp = payload.manifold.contactImpulse(i) || 0;
-        if (imp > maxSolverImpulse) maxSolverImpulse = imp;
-      }
-    } catch {
-      maxSolverImpulse = 0;
-    }
-
     const vehicleMass = 1500;
     const kinematicImpulse = vehicleMass * normalSpeed;
-    const totalImpactForce = Math.max(kinematicImpulse, maxSolverImpulse);
 
-    // Trigger camera shake on wall collision
-    if (vehicleStateRef && totalImpactForce > 12000) {
+    // Use solver impulse or kinematic impulse, or raw totalImpulse if provided on payload
+    const rawTotalImpulse = (payload as any).totalImpulse ?? (payload as any).impulse ?? 0;
+    const totalImpulse = Math.max(rawTotalImpulse, totalSolverImpulse, kinematicImpulse);
+
+    // Camera shake on substantial wall impacts (> 25000 N*s)
+    if (vehicleStateRef && totalImpulse > 25000) {
       const shakeIntensity = THREE.MathUtils.clamp(
-        0.35 + (totalImpactForce / 50000) * 0.65,
-        0.35,
+        0.4 + (totalImpulse / 80000) * 0.6,
+        0.4,
         1.0
       );
       vehicleStateRef.current.collisionShake = shakeIntensity;
     }
 
-    const minThreshold = 18000;
-    const maxForceScale = 65000;
+    // 5. Sound must ONLY play if totalImpulse is EXTREMELY HIGH (>= 50,000 N*s)
+    const EXTREMELY_HIGH_IMPULSE_THRESHOLD = 50000;
+    if (totalImpulse < EXTREMELY_HIGH_IMPULSE_THRESHOLD) {
+      return;
+    }
 
-    if (totalImpactForce > minThreshold) {
-      lastCrashTimestamp.current = now;
+    // Debounce to prevent audio overlapping (300ms)
+    const now = performance.now();
+    if (now - lastCrashTimestamp.current < 300) return;
+    lastCrashTimestamp.current = now;
 
-      const normalizedForce = THREE.MathUtils.clamp(
-        (totalImpactForce - minThreshold) / (maxForceScale - minThreshold),
-        0,
-        1
-      );
-      const crashVolume = THREE.MathUtils.clamp(0.35 + normalizedForce * 0.65, 0.35, 1.0);
-      const crashPitch = THREE.MathUtils.clamp(0.95 + (Math.random() - 0.5) * 0.16, 0.85, 1.15);
+    const normalizedForce = THREE.MathUtils.clamp(
+      (totalImpulse - EXTREMELY_HIGH_IMPULSE_THRESHOLD) / 50000,
+      0,
+      1
+    );
+    const crashVolume = THREE.MathUtils.clamp(0.45 + normalizedForce * 0.55, 0.45, 1.0);
+    const crashPitch = THREE.MathUtils.clamp(0.95 + (Math.random() - 0.5) * 0.16, 0.85, 1.15);
 
-      if (crashAudioRef.current) {
-        const audio = crashAudioRef.current;
-        if (audio.context && audio.context.state === 'suspended') {
-          audio.context.resume();
-        }
-        if (audio.isPlaying) {
-          audio.stop();
-        }
-        audio.setVolume(crashVolume);
-        audio.setPlaybackRate(crashPitch);
-        audio.play();
+    if (crashAudioRef.current) {
+      const audio = crashAudioRef.current;
+      if (audio.context && audio.context.state === 'suspended') {
+        audio.context.resume();
       }
+      if (audio.isPlaying) {
+        audio.stop();
+      }
+      audio.setVolume(crashVolume);
+      audio.setPlaybackRate(crashPitch);
+      audio.play();
     }
   };
 
@@ -452,19 +499,6 @@ export function Vehicle({
             );
           }
 
-          // Trigger metallic crash sound effect with debounce
-          const now = performance.now();
-          if (crashAudioRef.current && now - lastCrashTimestamp.current > 250) {
-            lastCrashTimestamp.current = now;
-            const audio = crashAudioRef.current;
-            if (audio.context && audio.context.state === 'suspended') {
-              audio.context.resume();
-            }
-            if (audio.isPlaying) audio.stop();
-            audio.setVolume(0.85);
-            audio.play();
-          }
-
           break; // Process one barrier bounce per frame
         }
       }
@@ -618,6 +652,7 @@ export function Vehicle({
       {/* 1. Invisible Arcade Physics Sphere Body: heavy marble with high linear/angular damping */}
       <RigidBody
         ref={sphereRigidBodyRef}
+        name="vehicle"
         position={position}
         rotation={rotation}
         colliders="ball"

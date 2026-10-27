@@ -26,6 +26,7 @@ export function Track() {
     if (scm) {
       scm.visible = false;
       roadClone = scm.clone();
+      roadClone.name = 'track-floor';
       roadClone.visible = false;
     }
 
@@ -40,8 +41,9 @@ export function Track() {
       {/* Visual track model (asphalt, rumble strips, tire barriers, armco, gantry) */}
       <primitive object={visualScene} />
 
-      {/* Physical Track Colliders: Drivable road floor trimesh + Thick Invisible Perimeter Bumpers */}
+      {/* Physical Track Road Surface Trimesh Collider */}
       <RigidBody
+        name="track-road"
         type="fixed"
         colliders={false}
         friction={1.2}
@@ -50,28 +52,36 @@ export function Track() {
         {/* Road surface trimesh: smooth drivable asphalt, no thin barrier meshes */}
         {roadMesh && (
           <MeshCollider type="trimesh">
-            <primitive object={roadMesh} />
+            <primitive object={roadMesh} name="track-floor" />
           </MeshCollider>
         )}
+      </RigidBody>
 
-        {/* =========================================================================
-            THICK INVISIBLE PERIMETER CONCRETE WALL BUMPERS
-            Massive 10m-thick physical concrete walls that the car cannot skip through
-           ========================================================================= */}
+      {/* =========================================================================
+          THICK INVISIBLE PERIMETER CONCRETE WALL BUMPERS
+          Massive 10m-thick physical concrete walls that the car cannot skip through
+         ========================================================================= */}
+      <RigidBody
+        name="wall"
+        type="fixed"
+        colliders={false}
+        friction={0.6}
+        restitution={0.2}
+      >
         {/* North Perimeter Wall (+Z) */}
-        <CuboidCollider args={[110, 10, 5]} position={[20, 5, 119]} />
+        <CuboidCollider name="wall" args={[110, 10, 5]} position={[20, 5, 119]} />
         {/* South Perimeter Wall (-Z) */}
-        <CuboidCollider args={[110, 10, 5]} position={[20, 5, -119]} />
+        <CuboidCollider name="wall" args={[110, 10, 5]} position={[20, 5, -119]} />
         {/* West Perimeter Wall (-X) */}
-        <CuboidCollider args={[5, 10, 130]} position={[-60, 5, 0]} />
+        <CuboidCollider name="wall" args={[5, 10, 130]} position={[-60, 5, 0]} />
         {/* East Perimeter Wall (+X) */}
-        <CuboidCollider args={[5, 10, 130]} position={[100, 5, 0]} />
+        <CuboidCollider name="wall" args={[5, 10, 130]} position={[100, 5, 0]} />
 
         {/* Diagonal Corner Bumpers */}
-        <CuboidCollider args={[25, 10, 5]} position={[95, 5, 110]} rotation={[0, -Math.PI / 4, 0]} />
-        <CuboidCollider args={[25, 10, 5]} position={[-50, 5, 105]} rotation={[0, Math.PI / 4, 0]} />
-        <CuboidCollider args={[25, 10, 5]} position={[-45, 5, -105]} rotation={[0, -Math.PI / 4, 0]} />
-        <CuboidCollider args={[25, 10, 5]} position={[85, 5, -105]} rotation={[0, Math.PI / 4, 0]} />
+        <CuboidCollider name="wall" args={[25, 10, 5]} position={[95, 5, 110]} rotation={[0, -Math.PI / 4, 0]} />
+        <CuboidCollider name="wall" args={[25, 10, 5]} position={[-50, 5, 105]} rotation={[0, Math.PI / 4, 0]} />
+        <CuboidCollider name="wall" args={[25, 10, 5]} position={[-45, 5, -105]} rotation={[0, -Math.PI / 4, 0]} />
+        <CuboidCollider name="wall" args={[25, 10, 5]} position={[85, 5, -105]} rotation={[0, Math.PI / 4, 0]} />
       </RigidBody>
     </>
   );

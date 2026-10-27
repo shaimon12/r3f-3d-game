@@ -17,8 +17,9 @@ export function Checkpoints() {
   return (
     <>
       {/* Checkpoint 0: Start / Finish Line (0% mark: X = -45, Z = 50) */}
-      <RigidBody type="fixed" colliders={false} position={[-45, 4.0, 50]}>
+      <RigidBody name="checkpoint" type="fixed" colliders={false} position={[-45, 4.0, 50]}>
         <CuboidCollider
+          name="checkpoint"
           args={[9.0, 4.0, 1.2]}
           sensor
           onIntersectionEnter={() => passCheckpoint(0)}
@@ -27,12 +28,14 @@ export function Checkpoints() {
 
       {/* Checkpoint 1: Sector 1 Chicane Exit (25% mark: X = -28.65, Z = -92.83) */}
       <RigidBody
+        name="checkpoint"
         type="fixed"
         colliders={false}
         position={[-28.65, 4.0, -92.83]}
         rotation={[0, 2.374, 0]}
       >
         <CuboidCollider
+          name="checkpoint"
           args={[9.0, 4.0, 1.5]}
           sensor
           onIntersectionEnter={() => passCheckpoint(1)}
@@ -41,12 +44,14 @@ export function Checkpoints() {
 
       {/* Checkpoint 2: Sector 2 DRS Straight (50% mark: X = 85.77, Z = -36.44) */}
       <RigidBody
+        name="checkpoint"
         type="fixed"
         colliders={false}
         position={[85.77, 4.0, -36.44]}
         rotation={[0, 0.163, 0]}
       >
         <CuboidCollider
+          name="checkpoint"
           args={[9.0, 4.0, 1.5]}
           sensor
           onIntersectionEnter={() => passCheckpoint(2)}
@@ -55,12 +60,14 @@ export function Checkpoints() {
 
       {/* Checkpoint 3: Sector 3 Hairpin Apex (75% mark: X = 58.24, Z = 101.74) */}
       <RigidBody
+        name="checkpoint"
         type="fixed"
         colliders={false}
         position={[58.24, 4.0, 101.74]}
         rotation={[0, -1.035, 0]}
       >
         <CuboidCollider
+          name="checkpoint"
           args={[9.0, 4.0, 1.5]}
           sensor
           onIntersectionEnter={() => passCheckpoint(3)}
