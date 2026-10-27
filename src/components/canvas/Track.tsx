@@ -76,7 +76,6 @@ export function Track() {
           type="fixed"
           colliders="trimesh"
           friction={0.1}
-          restitution={0.5}
         >
           <primitive object={mesh} />
         </RigidBody>
@@ -91,7 +90,6 @@ export function Track() {
         type="fixed"
         colliders={false}
         friction={0.1}
-        restitution={0.5}
       >
         {/* North Perimeter Wall (+Z: outer edge beyond max Z = 114) */}
         <CuboidCollider name="wall" args={[76, 2, 2]} position={[20, 2, 118]} />

@@ -22,21 +22,23 @@ export interface VehicleProps {
 
 // Pre-allocated static vectors outside render loop to eliminate per-frame GC
 const _targetPos = new THREE.Vector3();
-const _localLeft = new THREE.Vector3(-1, 0, 0);
-const _localRight = new THREE.Vector3(1, 0, 0);
-const _rayDirLeft = new THREE.Vector3();
-const _rayDirRight = new THREE.Vector3();
+const _fwdVec = new THREE.Vector3();
+const _fwdSlope = new THREE.Vector3();
+const _rightSlope = new THREE.Vector3();
+const _negFwdSlope = new THREE.Vector3();
+const _groundNormal = new THREE.Vector3(0, 1, 0);
+const _slopeMatrix = new THREE.Matrix4();
+const _targetQuat = new THREE.Quaternion();
+const _downDir = new THREE.Vector3(0, -1, 0);
 
 // Bounding Box-adjusted physics constants based on exact 3D model dimensions:
 // - Car Model Box: width 1.98m, height 1.18m, length 4.50m (tires bottom out at local y = -0.43)
 // - Track Model Box: width 150.3m, height 8.5m, length 228.4m
 // - Sphere Radius: 1.5m (thickened collider physically resists passing through thin trimesh walls)
-// - Impulse Multiplier: 800 (re-tuned thrust for fast, responsive acceleration)
-// - Hard Velocity Clamp: 50 m/s (~112 mph safe maximum speed via setLinvel)
+// - Impulse Multiplier: 250 (balanced against linearDamping=2 for natural top speed)
 const SPHERE_RADIUS = 1.5;
 const WHEEL_RADIUS = 0.34;
-const IMPULSE_MULTIPLIER = 800;
-const MAX_SAFE_SPEED = 50;
+const IMPULSE_MULTIPLIER = 250;
 
 export function Vehicle({
   position = [-42.5, 10.0, 56],
@@ -251,20 +253,11 @@ export function Vehicle({
     const turnSensitivity = 2.8;
     yawRef.current += steerInput * turnSensitivity * delta;
 
-    // Ensure visual car rotation successfully updates when steering left and right
-    // so the forward vector actually changes direction
-    visualCar.rotation.y = yawRef.current;
-    visualCar.updateMatrixWorld();
+    // 2. Heading direction vector in horizontal plane
+    const dirX = -Math.sin(yawRef.current);
+    const dirZ = -Math.cos(yawRef.current);
 
-    // 2. Fix the Direction Math:
-    // Inside useFrame, calculate the exact forward vector by creating a new THREE.Vector3(0, 0, -1)
-    // and applying the visual car's current rotation (.applyQuaternion(visualCar.quaternion)).
-    // Extract the X and Z values from this new vector.
-    const forwardVector = new THREE.Vector3(0, 0, -1).applyQuaternion(visualCar.quaternion);
-    const dirX = forwardVector.x;
-    const dirZ = forwardVector.z;
-
-    // 3. Thrust Application (reduced IMPULSE_MULTIPLIER to 150 for controlled acceleration)
+    // 3. Thrust Application (IMPULSE_MULTIPLIER = 250 balanced against linearDamping = 2)
     const boostMult = boost ? 1.4 : 1.0;
     const impulse = IMPULSE_MULTIPLIER * boostMult * delta;
 
@@ -278,101 +271,63 @@ export function Vehicle({
       sphere.applyImpulse({ x: -dirX * reverseImpulse, y: 0, z: -dirZ * reverseImpulse }, true);
     }
 
-    // =========================================================================
-    // HARD VELOCITY CLAMP
-    // Immediately after applying impulse, read current velocity. If magnitude exceeds
-    // safe max speed (30 m/s), normalize and multiply by 30, forcefully overwriting
-    // the sphere's linear velocity via setLinvel.
-    // =========================================================================
-    const vel = sphere.linvel();
-    const velMagnitude = Math.hypot(vel.x, vel.y, vel.z);
-    if (velMagnitude > MAX_SAFE_SPEED) {
-      const scale = MAX_SAFE_SPEED / velMagnitude;
-      sphere.setLinvel(
-        {
-          x: vel.x * scale,
-          y: vel.y * scale,
-          z: vel.z * scale,
-        },
-        true
-      );
-    }
-
     const currentVel = sphere.linvel();
+    const linvel = currentVel;
 
-    // 4. Lateral tire grip: counteract sideways slide so the sphere tracks along heading
-    const rightVector = new THREE.Vector3(1, 0, 0).applyQuaternion(visualCar.quaternion);
-    const latSpeed = currentVel.x * rightVector.x + currentVel.z * rightVector.z;
-    const gripFactor = handbrake ? 0.05 : 0.25;
+    // 4. Lateral tire grip: counteract sideways slide so the sliding puck tracks along heading
+    const rightX = Math.cos(yawRef.current);
+    const rightZ = -Math.sin(yawRef.current);
+    const latSpeed = currentVel.x * rightX + currentVel.z * rightZ;
+    const gripFactor = handbrake ? 0.05 : 0.35;
     sphere.applyImpulse(
-      { x: -rightVector.x * latSpeed * gripFactor, y: 0, z: -rightVector.z * latSpeed * gripFactor },
+      { x: -rightX * latSpeed * gripFactor, y: 0, z: -rightZ * latSpeed * gripFactor },
       true
     );
 
-    // =========================================================================
-    // 5. ACTIVE RAYCAST BUMPERS (THE FORCEFIELD)
-    // Fire horizontal Rapier raycasts from center of sphere strictly local Left & Right.
-    // If either detects a wall hit < 1.7m (0.2m outside 1.5m radius), instantly apply lateral repulsion.
-    // =========================================================================
-    const spherePos = sphere.translation();
-
-    // Local Left and Right horizontal world directions
-    _rayDirLeft.copy(_localLeft).applyQuaternion(visualCar.quaternion);
-    _rayDirLeft.y = 0;
-    _rayDirLeft.normalize();
-
-    _rayDirRight.copy(_localRight).applyQuaternion(visualCar.quaternion);
-    _rayDirRight.y = 0;
-    _rayDirRight.normalize();
-
-    const maxRayDist = SPHERE_RADIUS + 0.2; // 1.7m (0.2m outside 1.5m sphere)
-
-    const leftRay = new rapier.Ray(spherePos, _rayDirLeft);
-    const hitLeft = world.castRay(leftRay, maxRayDist, true, undefined, undefined, undefined, sphere);
-
-    const rightRay = new rapier.Ray(spherePos, _rayDirRight);
-    const hitRight = world.castRay(rightRay, maxRayDist, true, undefined, undefined, undefined, sphere);
-
-    if (hitLeft && !hitLeft.collider.isSensor() && hitLeft.timeOfImpact < maxRayDist) {
-      // Wall detected on local Left -> shove forcefully to the Right
-      const penetration = Math.max(0.01, maxRayDist - hitLeft.timeOfImpact);
-      const vIntoWall = Math.max(0, currentVel.x * _rayDirLeft.x + currentVel.z * _rayDirLeft.z);
-      const repulsionStrength = 80 + penetration * 250 + vIntoWall * 5;
-      sphere.wakeUp();
-      sphere.applyImpulse(
-        { x: _rayDirRight.x * repulsionStrength, y: 0, z: _rayDirRight.z * repulsionStrength },
-        true
-      );
-    }
-
-    if (hitRight && !hitRight.collider.isSensor() && hitRight.timeOfImpact < maxRayDist) {
-      // Wall detected on local Right -> shove forcefully to the Left
-      const penetration = Math.max(0.01, maxRayDist - hitRight.timeOfImpact);
-      const vIntoWall = Math.max(0, currentVel.x * _rayDirRight.x + currentVel.z * _rayDirRight.z);
-      const repulsionStrength = 80 + penetration * 250 + vIntoWall * 5;
-      sphere.wakeUp();
-      sphere.applyImpulse(
-        { x: _rayDirLeft.x * repulsionStrength, y: 0, z: _rayDirLeft.z * repulsionStrength },
-        true
-      );
-    }
-
     // Telemetry updates
-    const finalVel = sphere.linvel();
-    const linvel = finalVel;
-    const speedMs = Math.hypot(finalVel.x, finalVel.z);
+    const speedMs = Math.hypot(currentVel.x, currentVel.z);
     const speedMph = Math.round(speedMs * 2.237);
     if (onSpeedChange) {
       onSpeedChange(speedMph, speedMs);
     }
 
     // =========================================================================
-    // VISUAL CAR DECOUPLING: match position & heading yaw cleanly
+    // 5. VISUAL CAR DECOUPLING & GROUND-SLOPE ALIGNMENT
+    // Match position and align 3D mesh tilt to ground slopes via downward raycast
     // =========================================================================
-    // Offset Y so wheel bottoms (at local y = -0.43) touch ground flush with sphere bottom (radius SPHERE_RADIUS)
+    const spherePos = sphere.translation();
     const visualY = spherePos.y - (SPHERE_RADIUS - 0.43);
     visualCar.position.set(spherePos.x, visualY, spherePos.z);
-    visualCar.rotation.y = yawRef.current;
+
+    // Car heading direction in horizontal plane based on steering yaw
+    _fwdVec.set(-Math.sin(yawRef.current), 0, -Math.cos(yawRef.current));
+
+    // Fire downward raycast from sphere center to detect ground normal underneath
+    const downRay = new rapier.Ray(spherePos, _downDir);
+    const hitDown = world.castRayAndGetNormal(
+      downRay,
+      SPHERE_RADIUS + 1.5,
+      true,
+      undefined,
+      undefined,
+      undefined,
+      sphere
+    );
+
+    if (hitDown && !hitDown.collider.isSensor() && hitDown.normal.y > 0.3) {
+      _groundNormal.set(hitDown.normal.x, hitDown.normal.y, hitDown.normal.z).normalize();
+    } else {
+      _groundNormal.set(0, 1, 0);
+    }
+
+    // Align visual car orientation to the ground surface normal while tracking heading yaw
+    _fwdSlope.copy(_fwdVec).projectOnPlane(_groundNormal).normalize();
+    _rightSlope.crossVectors(_fwdSlope, _groundNormal).normalize();
+    _negFwdSlope.copy(_fwdSlope).negate();
+    _slopeMatrix.makeBasis(_rightSlope, _groundNormal, _negFwdSlope);
+    _targetQuat.setFromRotationMatrix(_slopeMatrix);
+
+    visualCar.quaternion.slerp(_targetQuat, Math.min(1.0, delta * 15.0));
 
     // Follow camera & state tracking
     if (targetPosRef) {
@@ -448,7 +403,7 @@ export function Vehicle({
 
   return (
     <>
-      {/* 1. Invisible Arcade Physics Sphere Body (strictly type="dynamic") */}
+      {/* 1. Invisible Arcade Physics Sphere Body (Sliding Puck) */}
       <RigidBody
         ref={sphereRigidBodyRef}
         name="vehicle"
@@ -458,13 +413,13 @@ export function Vehicle({
         type="dynamic"
         canSleep={false}
         ccd={true}
-        linearDamping={1}
+        enabledRotations={[false, true, false]}
+        linearDamping={2}
         angularDamping={2}
-        restitution={0.5}
         friction={0.1}
         onCollisionEnter={handleCollision}
       >
-        <BallCollider args={[SPHERE_RADIUS]} restitution={0.5} friction={0.1} />
+        <BallCollider args={[SPHERE_RADIUS]} friction={0.1} />
       </RigidBody>
 
       {/* 2. Decoupled Visuals: 3D car model independent in scene, oriented & positioned in useFrame */}

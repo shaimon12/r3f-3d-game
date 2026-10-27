@@ -37,7 +37,7 @@ export function Ground({
       />
 
       {/* 2. Safety ground floor and four invisible boundary walls around 500x500 world perimeter */}
-      <RigidBody name="wall" type="fixed" colliders={false} friction={0.6} restitution={0.2}>
+      <RigidBody name="wall" type="fixed" colliders={false} friction={0.6}>
         {/* Sub-surface ground floor beneath asphalt (spanning Y in [-1.0, 0.0]) */}
         <CuboidCollider
           name="ground-floor"
