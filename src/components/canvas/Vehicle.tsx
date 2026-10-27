@@ -31,12 +31,12 @@ const _rayDirRight = new THREE.Vector3();
 // - Car Model Box: width 1.98m, height 1.18m, length 4.50m (tires bottom out at local y = -0.43)
 // - Track Model Box: width 150.3m, height 8.5m, length 228.4m
 // - Sphere Radius: 1.5m (thickened collider physically resists passing through thin trimesh walls)
-// - Impulse Multiplier: 150 (drastically reduced for controlled, stable acceleration)
-// - Hard Velocity Clamp: 30 m/s (~67 mph safe max speed via setLinvel)
+// - Impulse Multiplier: 800 (re-tuned thrust for fast, responsive acceleration)
+// - Hard Velocity Clamp: 50 m/s (~112 mph safe maximum speed via setLinvel)
 const SPHERE_RADIUS = 1.5;
 const WHEEL_RADIUS = 0.34;
-const IMPULSE_MULTIPLIER = 150;
-const MAX_SAFE_SPEED = 30;
+const IMPULSE_MULTIPLIER = 800;
+const MAX_SAFE_SPEED = 50;
 
 export function Vehicle({
   position = [-42.5, 10.0, 56],
@@ -458,7 +458,7 @@ export function Vehicle({
         type="dynamic"
         canSleep={false}
         ccd={true}
-        linearDamping={3}
+        linearDamping={1}
         angularDamping={2}
         restitution={0.5}
         friction={0.1}

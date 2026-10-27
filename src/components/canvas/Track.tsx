@@ -1,13 +1,14 @@
 import { useEffect, useMemo } from 'react';
 import { useGLTF, BakeShadows } from '@react-three/drei';
-import { RigidBody, MeshCollider, CuboidCollider } from '@react-three/rapier';
+import { RigidBody, CuboidCollider } from '@react-three/rapier';
 import * as THREE from 'three';
 
 /**
  * Professional Formula 1 Grand Prix Circuit.
- * - Stops using trimesh for the outer barriers to eliminate high-speed wall tunneling.
- * - Uses trimesh strictly for the drivable road floor (Simplified_Collision_Mesh).
- * - Instantiates thick, invisible <CuboidCollider> bumpers along perimeter edges of the track.
+ * - Traverses all loaded GLTF nodes and wraps each individual mesh in its own
+ *   <RigidBody colliders="trimesh" type="fixed">.
+ * - Guarantees every wall, barrier, curb, and floor segment gets physical geometry in Rapier.
+ * - Preserves the perimeter bumpers as an outer safety boundary.
  */
 export function Track() {
   const { scene } = useGLTF('/models/track.glb');
@@ -23,26 +24,43 @@ export function Track() {
       size: size.toArray(),
     });
   }, [scene]);
-  const { visualScene, roadMesh } = useMemo(() => {
-    const s = scene.clone(true);
-    s.traverse((child) => {
+
+  // Traverse loaded GLTF scene & nodes, extracting every individual mesh with its world transform
+  const trackMeshes = useMemo(() => {
+    const cloned = scene.clone(true);
+    cloned.updateMatrixWorld(true);
+
+    const meshes: THREE.Mesh[] = [];
+
+    cloned.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
-        child.castShadow = false;
-        child.receiveShadow = true;
+        const mesh = child as THREE.Mesh;
+        mesh.castShadow = false;
+        mesh.receiveShadow = true;
+
+        // Hide dedicated collision mesh so asphalt texture renders cleanly
+        if (mesh.name === 'Simplified_Collision_Mesh') {
+          mesh.visible = false;
+        }
+
+        // Bake world transforms directly into mesh position/quaternion/scale
+        const worldPos = new THREE.Vector3();
+        const worldQuat = new THREE.Quaternion();
+        const worldScale = new THREE.Vector3();
+        mesh.getWorldPosition(worldPos);
+        mesh.getWorldQuaternion(worldQuat);
+        mesh.getWorldScale(worldScale);
+
+        mesh.position.copy(worldPos);
+        mesh.quaternion.copy(worldQuat);
+        mesh.scale.copy(worldScale);
+        mesh.updateMatrix();
+
+        meshes.push(mesh);
       }
     });
 
-    // Extract the dedicated road collision mesh for drivable trimesh
-    const scm = s.getObjectByName('Simplified_Collision_Mesh') as THREE.Mesh | null;
-    let roadClone: THREE.Mesh | null = null;
-    if (scm) {
-      scm.visible = false;
-      roadClone = scm.clone();
-      roadClone.name = 'track-floor';
-      roadClone.visible = false;
-    }
-
-    return { visualScene: s, roadMesh: roadClone };
+    return meshes;
   }, [scene]);
 
   return (
@@ -50,30 +68,23 @@ export function Track() {
       {/* Bake static shadows for track elements */}
       <BakeShadows />
 
-      {/* Visual track model (asphalt, rumble strips, tire barriers, armco, gantry) */}
-      <primitive object={visualScene} />
-
-      {/* Physical Track Road Surface Trimesh Collider */}
-      <RigidBody
-        name="track-road"
-        type="fixed"
-        colliders={false}
-        friction={0.1}
-        restitution={0.5}
-      >
-        {/* Road surface trimesh: smooth drivable asphalt, no thin barrier meshes */}
-        {roadMesh && (
-          <MeshCollider type="trimesh">
-            <primitive object={roadMesh} name="track-floor" />
-          </MeshCollider>
-        )}
-      </RigidBody>
+      {/* Individual Trimesh Rigid Bodies for every single wall, barrier, and floor mesh */}
+      {trackMeshes.map((mesh, index) => (
+        <RigidBody
+          key={mesh.uuid || index}
+          name={mesh.name || `track-mesh-${index}`}
+          type="fixed"
+          colliders="trimesh"
+          friction={0.1}
+          restitution={0.5}
+        >
+          <primitive object={mesh} />
+        </RigidBody>
+      ))}
 
       {/* =========================================================================
           TIGHT OUTER PERIMETER BUMPERS
-          Only placed tightly on the extreme outer X/Z bounds of the track bounding box.
-          Height is kept low (Y in [0, 4]) to eliminate any sky/ceiling blockage.
-          No diagonal colliders and none spanning the center [0, y, 0].
+          Extreme outer boundary safety walls along the track perimeter.
          ========================================================================= */}
       <RigidBody
         name="wall"
