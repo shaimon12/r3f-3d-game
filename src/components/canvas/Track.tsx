@@ -75,7 +75,7 @@ export function Track() {
           name={mesh.name || `track-mesh-${index}`}
           type="fixed"
           colliders="trimesh"
-          friction={0.1}
+          friction={0}
         >
           <primitive object={mesh} />
         </RigidBody>

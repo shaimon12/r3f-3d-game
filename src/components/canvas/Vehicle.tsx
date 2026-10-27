@@ -4,6 +4,7 @@ import { useGLTF, PositionalAudio, useKeyboardControls } from '@react-three/drei
 import {
   RigidBody,
   BallCollider,
+  CoefficientCombineRule,
   useRapier,
   type RapierRigidBody,
   type CollisionEnterPayload,
@@ -35,10 +36,10 @@ const _downDir = new THREE.Vector3(0, -1, 0);
 // - Car Model Box: width 1.98m, height 1.18m, length 4.50m (tires bottom out at local y = -0.43)
 // - Track Model Box: width 150.3m, height 8.5m, length 228.4m
 // - Sphere Radius: 1.5m (thickened collider physically resists passing through thin trimesh walls)
-// - Impulse Multiplier: 250 (balanced against linearDamping=2 for natural top speed)
+// - Impulse Multiplier: 1500 (boosted thrust for natural 120-150 mph cruising speed)
 const SPHERE_RADIUS = 1.5;
 const WHEEL_RADIUS = 0.34;
-const IMPULSE_MULTIPLIER = 250;
+const IMPULSE_MULTIPLIER = 1500;
 
 export function Vehicle({
   position = [-42.5, 10.0, 56],
@@ -247,17 +248,17 @@ export function Vehicle({
     steerAngleRef.current = THREE.MathUtils.lerp(
       steerAngleRef.current,
       steerInput * 0.45,
-      Math.min(1.0, delta * 10.0)
+      Math.min(1.0, delta * 12.0)
     );
 
-    const turnSensitivity = 2.8;
+    const turnSensitivity = 3.0;
     yawRef.current += steerInput * turnSensitivity * delta;
 
     // 2. Heading direction vector in horizontal plane
     const dirX = -Math.sin(yawRef.current);
     const dirZ = -Math.cos(yawRef.current);
 
-    // 3. Thrust Application (IMPULSE_MULTIPLIER = 250 balanced against linearDamping = 2)
+    // 3. Thrust Application (IMPULSE_MULTIPLIER = 1500 balanced against linearDamping = 2)
     const boostMult = boost ? 1.4 : 1.0;
     const impulse = IMPULSE_MULTIPLIER * boostMult * delta;
 
@@ -267,20 +268,22 @@ export function Vehicle({
       sphere.applyImpulse({ x: dirX * impulse, y: 0, z: dirZ * impulse }, true);
     } else if (backward) {
       sphere.wakeUp();
-      const reverseImpulse = IMPULSE_MULTIPLIER * 0.5 * delta;
+      const reverseImpulse = IMPULSE_MULTIPLIER * 0.6 * delta;
       sphere.applyImpulse({ x: -dirX * reverseImpulse, y: 0, z: -dirZ * reverseImpulse }, true);
     }
 
     const currentVel = sphere.linvel();
     const linvel = currentVel;
 
-    // 4. Lateral tire grip: counteract sideways slide so the sliding puck tracks along heading
+    // 4. Lateral tire grip: counteract sideways slide so turning responds instantly along heading
     const rightX = Math.cos(yawRef.current);
     const rightZ = -Math.sin(yawRef.current);
     const latSpeed = currentVel.x * rightX + currentVel.z * rightZ;
-    const gripFactor = handbrake ? 0.05 : 0.35;
+    // Strong grip under normal driving forces the frictionless puck to track heading cleanly
+    const gripFactor = handbrake ? 0.15 : 0.95;
+    const gripImpulse = -latSpeed * 14.14 * gripFactor * Math.min(1.0, delta * 20.0);
     sphere.applyImpulse(
-      { x: -rightX * latSpeed * gripFactor, y: 0, z: -rightZ * latSpeed * gripFactor },
+      { x: rightX * gripImpulse, y: 0, z: rightZ * gripImpulse },
       true
     );
 
@@ -403,7 +406,7 @@ export function Vehicle({
 
   return (
     <>
-      {/* 1. Invisible Arcade Physics Sphere Body (Sliding Puck) */}
+      {/* 1. Invisible Arcade Physics Sphere Body (Frictionless Sliding Puck) */}
       <RigidBody
         ref={sphereRigidBodyRef}
         name="vehicle"
@@ -416,10 +419,11 @@ export function Vehicle({
         enabledRotations={[false, true, false]}
         linearDamping={2}
         angularDamping={2}
-        friction={0.1}
+        friction={0}
+        frictionCombineRule={CoefficientCombineRule.Min}
         onCollisionEnter={handleCollision}
       >
-        <BallCollider args={[SPHERE_RADIUS]} friction={0.1} />
+        <BallCollider args={[SPHERE_RADIUS]} friction={0} frictionCombineRule={CoefficientCombineRule.Min} />
       </RigidBody>
 
       {/* 2. Decoupled Visuals: 3D car model independent in scene, oriented & positioned in useFrame */}
