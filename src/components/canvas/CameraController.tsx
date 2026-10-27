@@ -36,6 +36,7 @@ export function CameraController({ mode, vehicleStateRef }: CameraControllerProp
   const orbitRef = useRef<OrbitControlsImpl>(null);
   const currentLookAt = useRef(new THREE.Vector3(-42.5, 1.2, 50));
   const collisionShakeIntensity = useRef(0);
+  const isFirstFrameRef = useRef(true);
 
   useFrame((state, delta) => {
     const { position: carPos, quaternion: carQuat, speedMph, collisionShake = 0 } = vehicleStateRef.current;
@@ -74,13 +75,17 @@ export function CameraController({ mode, vehicleStateRef }: CameraControllerProp
         .addScaledVector(_upVec, 0.85)
         .addScaledVector(_carForward, 3.2);
 
-      // 2. Smooth lerp for cinematic trailing
-      // Camera position interpolation
-      state.camera.position.lerp(_targetCamPos, Math.min(1, delta * 5.5));
-
-      // Camera aiming interpolation
-      currentLookAt.current.lerp(_targetLookAt, Math.min(1, delta * 7.5));
-      state.camera.lookAt(currentLookAt.current);
+      // 2. Smooth 'lazy follow' spring lerp to completely absorb physics vibrations
+      if (isFirstFrameRef.current) {
+        state.camera.position.copy(_targetCamPos);
+        currentLookAt.current.copy(_targetLookAt);
+        state.camera.lookAt(currentLookAt.current);
+        isFirstFrameRef.current = false;
+      } else {
+        state.camera.position.lerp(_targetCamPos, 0.1);
+        currentLookAt.current.lerp(_targetLookAt, 0.1);
+        state.camera.lookAt(currentLookAt.current);
+      }
 
       // 3. Dynamic speed-based FOV for visceral sense of speed
       // Widens slightly as velocity increases (52° at rest -> 72° at 150+ mph)
@@ -91,21 +96,11 @@ export function CameraController({ mode, vehicleStateRef }: CameraControllerProp
         pCam.updateProjectionMatrix();
       }
 
-      // 4. Subtle camera shake effect
-      // Triggers ONLY when:
-      // a) The car exceeds 100 mph (aerodynamic buffeting / chassis vibration)
-      // b) The car collides with a wall (impact impulse)
-      let highSpeedShake = 0;
-      if (speedMph > 100) {
-        // High-speed aerodynamic buffeting shake: scales smoothly above 100 mph up to ~150+ mph
-        const speedOvershoot = (speedMph - 100) / 55; // 0.0 at 100 mph, 1.0 at 155 mph
-        highSpeedShake = THREE.MathUtils.clamp(speedOvershoot * 0.065, 0, 0.09);
-      }
-
-      const totalShake = highSpeedShake + collisionShakeIntensity.current * 0.22;
+      // 4. Wall collision shake effect (only triggers upon physical impact)
+      const totalShake = collisionShakeIntensity.current * 0.15;
 
       if (totalShake > 0.001) {
-        const t = state.clock.getElapsedTime() * 42; // 42 Hz vibration
+        const t = state.clock.getElapsedTime() * 30;
         const offsetX = (Math.sin(t * 1.3) + Math.cos(t * 2.1)) * 0.5 * totalShake;
         const offsetY = (Math.sin(t * 1.7) + Math.cos(t * 1.1)) * 0.5 * totalShake;
         const offsetZ = (Math.cos(t * 1.9) + Math.sin(t * 0.7)) * 0.3 * totalShake;

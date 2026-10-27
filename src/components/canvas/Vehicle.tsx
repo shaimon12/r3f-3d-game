@@ -23,6 +23,7 @@ export interface VehicleProps {
 
 // Pre-allocated static vectors outside render loop to eliminate per-frame GC
 const _targetPos = new THREE.Vector3();
+const _targetVisualPos = new THREE.Vector3();
 const _fwdVec = new THREE.Vector3();
 const _fwdSlope = new THREE.Vector3();
 const _rightSlope = new THREE.Vector3();
@@ -65,6 +66,7 @@ export function Vehicle({
   const steerAngleRef = useRef(0);
   const wheelRollRef = useRef([0, 0, 0, 0]);
   const spawnPos = useRef(position);
+  const isFirstFrameRef = useRef(true);
 
   // Load the 3D models for car and track
   const { scene: carScene } = useGLTF('/models/car.glb');
@@ -232,6 +234,7 @@ export function Vehicle({
       sphere.setAngvel({ x: 0, y: 0, z: 0 }, true);
       yawRef.current = rotation[1] || 0;
       steerAngleRef.current = 0;
+      isFirstFrameRef.current = true;
       return;
     }
 
@@ -300,12 +303,12 @@ export function Vehicle({
     }
 
     // =========================================================================
-    // 5. VISUAL CAR DECOUPLING & GROUND-SLOPE ALIGNMENT
-    // Match position and align 3D mesh tilt to ground slopes via downward raycast
+    // 5. VISUAL CAR DECOUPLING & GROUND-SLOPE ALIGNMENT (Shock Absorbers)
+    // Smooth decoupling from physics body to absorb trimesh solver jitter
     // =========================================================================
     const spherePos = sphere.translation();
     const visualY = spherePos.y - (SPHERE_RADIUS - 0.43);
-    visualCar.position.set(spherePos.x, visualY, spherePos.z);
+    _targetVisualPos.set(spherePos.x, visualY, spherePos.z);
 
     // Car heading direction in horizontal plane based on steering yaw
     _fwdVec.set(-Math.sin(yawRef.current), 0, -Math.cos(yawRef.current));
@@ -335,7 +338,15 @@ export function Vehicle({
     _slopeMatrix.makeBasis(_rightSlope, _groundNormal, _negFwdSlope);
     _targetQuat.setFromRotationMatrix(_slopeMatrix);
 
-    visualCar.quaternion.slerp(_targetQuat, Math.min(1.0, delta * 15.0));
+    // Shock Absorbers: Smooth lerp/slerp absorbs solver jitter completely
+    if (isFirstFrameRef.current) {
+      visualCar.position.copy(_targetVisualPos);
+      visualCar.quaternion.copy(_targetQuat);
+      isFirstFrameRef.current = false;
+    } else {
+      visualCar.position.lerp(_targetVisualPos, 0.3);
+      visualCar.quaternion.slerp(_targetQuat, 0.2);
+    }
 
     // Follow camera & state tracking
     if (targetPosRef) {
@@ -422,7 +433,7 @@ export function Vehicle({
         canSleep={false}
         ccd={true}
         enabledRotations={[false, true, false]}
-        gravityScale={15}
+        gravityScale={6}
         linearDamping={2}
         angularDamping={2}
         friction={0}
