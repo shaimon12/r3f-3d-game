@@ -275,6 +275,11 @@ export function Vehicle({
     const currentVel = sphere.linvel();
     const linvel = currentVel;
 
+    // Kill Upward Bounces: If trimesh seams launch the sphere (vel.y > 2), slam it down immediately
+    if (currentVel.y > 2) {
+      sphere.applyImpulse({ x: 0, y: -500, z: 0 }, true);
+    }
+
     // 4. Lateral tire grip: counteract sideways slide so turning responds instantly along heading
     const rightX = Math.cos(yawRef.current);
     const rightZ = -Math.sin(yawRef.current);
@@ -417,6 +422,7 @@ export function Vehicle({
         canSleep={false}
         ccd={true}
         enabledRotations={[false, true, false]}
+        gravityScale={15}
         linearDamping={2}
         angularDamping={2}
         friction={0}
