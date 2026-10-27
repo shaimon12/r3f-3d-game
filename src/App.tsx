@@ -90,10 +90,9 @@ export function App() {
   const miniMapMarkerRef = useRef<SVGGElement>(null);
 
   // Shared reactive state ref for vehicle position, orientation, and velocity
-  // The Drop Test: Spawn 10 meters above the track starting line (Y = 10.0)
-  // to prove the rigid body is active and not stuck in the ground
+  // Raycast Hover: Spawn at starting line (Y = 2.0) to smoothly settle at 1.0m ride height
   const vehicleStateRef = useRef<VehicleState>({
-    position: new THREE.Vector3(-42.5, 10.0, 56),
+    position: new THREE.Vector3(-42.5, 2.0, 56),
     quaternion: new THREE.Quaternion(),
     speedMph: 0,
     collisionShake: 0,
@@ -191,9 +190,9 @@ export function App() {
               {/* Three Invisible Rigid Body Sensor Checkpoints to Track Valid Laps */}
               <Checkpoints />
 
-              {/* The Drop Test: Spawns 10 meters above track starting line, drops & bounces on asphalt */}
+              {/* Raycast Hover Controller: Spawns above starting line and hovers at 1.0m ride height */}
               <Vehicle
-                position={[-42.5, 10.0, 56]}
+                position={[-42.5, 2.0, 56]}
                 cameraMode={cameraMode}
                 onSpeedChange={(mph) => setSpeedMph(mph)}
                 vehicleStateRef={vehicleStateRef}

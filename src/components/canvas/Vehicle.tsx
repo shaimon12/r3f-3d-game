@@ -49,14 +49,13 @@ function dampVec3(current: THREE.Vector3, target: THREE.Vector3, lambda: number,
 // Bounding Box-adjusted physics constants based on exact 3D model dimensions:
 // - Car Model Box: width 1.98m, height 1.18m, length 4.50m (tires bottom out at local y = -0.43)
 // - Track Model Box: width 150.3m, height 8.5m, length 228.4m
-// - Sphere Radius: 1.5m (thickened collider physically resists passing through thin trimesh walls)
-// - Impulse Multiplier: 4000 (re-balanced thrust against linearDamping=4 for buttery smooth ~120 mph top speed)
-const SPHERE_RADIUS = 1.5;
+// - Sphere Radius: 0.5m (Raycast hover controller collider floating above floor)
+// - Acceleration: 165 m/s^2 balanced against linearDamping=3 for buttery smooth ~120 mph cruising
+const SPHERE_RADIUS = 0.5;
 const WHEEL_RADIUS = 0.34;
-const IMPULSE_MULTIPLIER = 4000;
 
 export function Vehicle({
-  position = [-42.5, 10.0, 56],
+  position = [-42.5, 2.0, 56],
   rotation = [0, 0, 0],
   onSpeedChange,
   targetPosRef,
@@ -276,34 +275,72 @@ export function Vehicle({
     const turnSensitivity = 3.0;
     yawRef.current += steerInput * turnSensitivity * delta;
 
-    // 2. Heading direction vector in horizontal plane
+    const spherePos = sphere.translation();
+    const currentVel = sphere.linvel();
+    const linvel = currentVel;
+    const mass = sphere.mass();
+
+    // =========================================================================
+    // 2. RAYCAST SUSPENSION (Hover Controller)
+    // Raycast directly down from sphere center to eliminate trimesh floor collisions
+    // =========================================================================
+    const downRay = new rapier.Ray(spherePos, _downDir);
+    const hitDown = world.castRayAndGetNormal(
+      downRay,
+      12.0,
+      true,
+      undefined,
+      undefined,
+      undefined,
+      sphere,
+      (collider) => !collider.isSensor()
+    );
+
+    if (hitDown) {
+      const hitDistance = (hitDown as any).distance ?? hitDown.timeOfImpact;
+      // Target ride height of 1.0 meter. Spring force with critical velocity damping
+      const hoverForce = (1.0 - hitDistance) * 400 - (currentVel.y * 30);
+      sphere.applyImpulse({ x: 0, y: hoverForce * delta, z: 0 }, true);
+
+      if (hitDown.normal && hitDown.normal.y > 0.3) {
+        _groundNormal.set(hitDown.normal.x, hitDown.normal.y, hitDown.normal.z).normalize();
+      } else {
+        _groundNormal.set(0, 1, 0);
+      }
+    } else {
+      // Airborne fallback: pull vehicle towards track if launched above 12m
+      sphere.applyImpulse({ x: 0, y: -9.81 * mass * delta, z: 0 }, true);
+      _groundNormal.set(0, 1, 0);
+    }
+
+    // =========================================================================
+    // 3. FORWARD THRUST & REVERSE
+    // =========================================================================
     const dirX = -Math.sin(yawRef.current);
     const dirZ = -Math.cos(yawRef.current);
 
-    // 3. Thrust Application (IMPULSE_MULTIPLIER = 1500 balanced against linearDamping = 2)
+    // Thrust acceleration: 165 m/s^2 balanced against linearDamping=3 for ~120 mph
+    const thrustMultiplier = mass * 165;
     const boostMult = boost ? 1.4 : 1.0;
-    const impulse = IMPULSE_MULTIPLIER * boostMult * delta;
+    const impulse = thrustMultiplier * boostMult * delta;
 
     if (forward) {
-      // Ensure sphereRigidBodyRef.current.wakeUp() is called so Rapier doesn't put sphere to sleep
       sphere.wakeUp();
       sphere.applyImpulse({ x: dirX * impulse, y: 0, z: dirZ * impulse }, true);
     } else if (backward) {
       sphere.wakeUp();
-      const reverseImpulse = IMPULSE_MULTIPLIER * 0.6 * delta;
+      const reverseImpulse = thrustMultiplier * 0.6 * delta;
       sphere.applyImpulse({ x: -dirX * reverseImpulse, y: 0, z: -dirZ * reverseImpulse }, true);
     }
 
-    const currentVel = sphere.linvel();
-    const linvel = currentVel;
-
-    // 4. Lateral tire grip: counteract sideways slide so turning responds instantly along heading
+    // =========================================================================
+    // 4. LATERAL TIRE GRIP
+    // =========================================================================
     const rightX = Math.cos(yawRef.current);
     const rightZ = -Math.sin(yawRef.current);
     const latSpeed = currentVel.x * rightX + currentVel.z * rightZ;
-    // Strong grip under normal driving forces the frictionless puck to track heading cleanly
     const gripFactor = handbrake ? 0.15 : 0.95;
-    const gripImpulse = -latSpeed * 14.14 * gripFactor * Math.min(1.0, delta * 20.0);
+    const gripImpulse = -latSpeed * mass * gripFactor * Math.min(1.0, delta * 20.0);
     sphere.applyImpulse(
       { x: rightX * gripImpulse, y: 0, z: rightZ * gripImpulse },
       true
@@ -318,32 +355,13 @@ export function Vehicle({
 
     // =========================================================================
     // 5. VISUAL CAR DECOUPLING & GROUND-SLOPE ALIGNMENT (Shock Absorbers)
-    // Smooth decoupling from physics body to absorb trimesh solver jitter
+    // When hovering at 1.0m ride height, visualY = spherePos.y - 0.57 puts tires directly on asphalt
     // =========================================================================
-    const spherePos = sphere.translation();
-    const visualY = spherePos.y - (SPHERE_RADIUS - 0.43);
+    const visualY = spherePos.y - 0.57;
     _targetVisualPos.set(spherePos.x, visualY, spherePos.z);
 
     // Car heading direction in horizontal plane based on steering yaw
     _fwdVec.set(-Math.sin(yawRef.current), 0, -Math.cos(yawRef.current));
-
-    // Fire downward raycast from sphere center to detect ground normal underneath
-    const downRay = new rapier.Ray(spherePos, _downDir);
-    const hitDown = world.castRayAndGetNormal(
-      downRay,
-      SPHERE_RADIUS + 1.5,
-      true,
-      undefined,
-      undefined,
-      undefined,
-      sphere
-    );
-
-    if (hitDown && !hitDown.collider.isSensor() && hitDown.normal.y > 0.3) {
-      _groundNormal.set(hitDown.normal.x, hitDown.normal.y, hitDown.normal.z).normalize();
-    } else {
-      _groundNormal.set(0, 1, 0);
-    }
 
     // Align visual car orientation to the ground surface normal while tracking heading yaw
     _fwdSlope.copy(_fwdVec).projectOnPlane(_groundNormal).normalize();
@@ -481,8 +499,8 @@ export function Vehicle({
         ccd={true}
         {...({ interpolate: true } as any)}
         enabledRotations={[false, true, false]}
-        gravityScale={6}
-        linearDamping={4}
+        gravityScale={0}
+        linearDamping={3}
         angularDamping={2}
         friction={0}
         frictionCombineRule={CoefficientCombineRule.Min}
