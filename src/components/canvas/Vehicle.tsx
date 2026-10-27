@@ -19,6 +19,7 @@ export interface VehicleProps {
   onSpeedChange?: (speedMph: number, speedMs?: number) => void;
   targetPosRef?: React.MutableRefObject<THREE.Vector3>;
   vehicleStateRef?: React.MutableRefObject<VehicleState>;
+  cameraMode?: 'follow' | 'orbit';
 }
 
 // Pre-allocated static vectors outside render loop to eliminate per-frame GC
@@ -32,6 +33,18 @@ const _groundNormal = new THREE.Vector3(0, 1, 0);
 const _slopeMatrix = new THREE.Matrix4();
 const _targetQuat = new THREE.Quaternion();
 const _downDir = new THREE.Vector3(0, -1, 0);
+const _carForward = new THREE.Vector3();
+const _carBack = new THREE.Vector3();
+const _carUp = new THREE.Vector3();
+const _idealCamPos = new THREE.Vector3();
+const _idealLookAt = new THREE.Vector3();
+
+// Vector3 component-wise damping using native THREE.MathUtils.damp
+function dampVec3(current: THREE.Vector3, target: THREE.Vector3, lambda: number, delta: number) {
+  current.x = THREE.MathUtils.damp(current.x, target.x, lambda, delta);
+  current.y = THREE.MathUtils.damp(current.y, target.y, lambda, delta);
+  current.z = THREE.MathUtils.damp(current.z, target.z, lambda, delta);
+}
 
 // Bounding Box-adjusted physics constants based on exact 3D model dimensions:
 // - Car Model Box: width 1.98m, height 1.18m, length 4.50m (tires bottom out at local y = -0.43)
@@ -48,6 +61,7 @@ export function Vehicle({
   onSpeedChange,
   targetPosRef,
   vehicleStateRef,
+  cameraMode = 'follow',
 }: VehicleProps) {
   const { world, rapier } = useRapier();
   const matchState = useGameStore((state) => state.matchState);
@@ -67,6 +81,10 @@ export function Vehicle({
   const wheelRollRef = useRef([0, 0, 0, 0]);
   const spawnPos = useRef(position);
   const isFirstFrameRef = useRef(true);
+
+  // Arcade Chase Camera tracking refs
+  const currentLookAt = useRef(new THREE.Vector3(-42.5, 8.93, 46));
+  const isFirstCameraFrameRef = useRef(true);
 
   // Load the 3D models for car and track
   const { scene: carScene } = useGLTF('/models/car.glb');
@@ -212,7 +230,7 @@ export function Vehicle({
   // =========================================================================
   // SIMPLE FORCE MOVEMENT LOOP: Pure applyImpulse forward & steering
   // =========================================================================
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     const sphere = sphereRigidBodyRef.current;
     const visualCar = visualCarRef.current;
     if (!sphere || !visualCar || !world || !rapier) return;
@@ -235,6 +253,7 @@ export function Vehicle({
       yawRef.current = rotation[1] || 0;
       steerAngleRef.current = 0;
       isFirstFrameRef.current = true;
+      isFirstCameraFrameRef.current = true;
       return;
     }
 
@@ -357,6 +376,39 @@ export function Vehicle({
       vehicleStateRef.current.position.copy(visualCar.position);
       vehicleStateRef.current.quaternion.copy(visualCar.quaternion);
       vehicleStateRef.current.speedMph = speedMph;
+    }
+
+    // =========================================================================
+    // 6. TIGHT ARCADE CHASE CAMERA (Inside Vehicle.tsx useFrame)
+    // 2.5m above, 6.5m behind, delta-time damp smoothing, smooth lookAt target 10m forward
+    // =========================================================================
+    if (cameraMode === 'follow') {
+      _carForward.set(0, 0, -1).applyQuaternion(visualCar.quaternion);
+      _carBack.set(0, 0, 1).applyQuaternion(visualCar.quaternion);
+      _carUp.set(0, 1, 0).applyQuaternion(visualCar.quaternion);
+
+      // Tighten the Offset: strictly 2.5m above and 6.5m behind car's current local orientation
+      _idealCamPos
+        .copy(visualCar.position)
+        .addScaledVector(_carUp, 2.5)
+        .addScaledVector(_carBack, 6.5);
+
+      // Smooth the Look Target: car's position plus 10 meters forward along local heading
+      _idealLookAt
+        .copy(visualCar.position)
+        .addScaledVector(_carForward, 10.0);
+
+      if (isFirstCameraFrameRef.current) {
+        state.camera.position.copy(_idealCamPos);
+        currentLookAt.current.copy(_idealLookAt);
+        state.camera.lookAt(currentLookAt.current);
+        isFirstCameraFrameRef.current = false;
+      } else {
+        // Delta-Time Smoothing using THREE.MathUtils.damp to eliminate micro-stutters
+        dampVec3(state.camera.position, _idealCamPos, 9.0, delta);
+        dampVec3(currentLookAt.current, _idealLookAt, 12.0, delta);
+        state.camera.lookAt(currentLookAt.current);
+      }
     }
 
     // Wheel visual rotations

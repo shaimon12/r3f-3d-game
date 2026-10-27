@@ -193,6 +193,7 @@ export function App() {
               {/* The Drop Test: Spawns 10 meters above track starting line, drops & bounces on asphalt */}
               <Vehicle
                 position={[-42.5, 10.0, 56]}
+                cameraMode={cameraMode}
                 onSpeedChange={(mph) => setSpeedMph(mph)}
                 vehicleStateRef={vehicleStateRef}
               />
