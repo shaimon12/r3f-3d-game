@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { useGLTF, PositionalAudio } from '@react-three/drei';
+import { useGLTF, PositionalAudio, useKeyboardControls } from '@react-three/drei';
 import {
   RigidBody,
   type RapierRigidBody,
   type CollisionEnterPayload,
 } from '@react-three/rapier';
 import * as THREE from 'three';
-import { useKeyboardControls } from '@/hooks/useKeyboardControls';
 import { useGameStore } from '@/stores/useGameStore';
 import type { VehicleState } from './CameraController';
 
@@ -26,13 +25,13 @@ const _targetPos = new THREE.Vector3();
 // - Car Model Box: width 1.98m, height 1.18m, length 4.50m (tires bottom out at local y = -0.43)
 // - Track Model Box: width 150.3m, height 8.5m, length 228.4m
 // - Sphere Radius: 1.0m (2.0m diameter perfectly matches car's 1.98m width so it hits walls properly)
-// - Impulse Multiplier: 220 (tuned for 4.19kg Rapier sphere against linearDamping=1, reaching ~110 mph)
+// - Impulse Multiplier: 3000 (overcomes static friction & linearDamping=1)
 const SPHERE_RADIUS = 1.0;
 const WHEEL_RADIUS = 0.34;
 const IMPULSE_MULTIPLIER = 3000;
 
 export function Vehicle({
-  position = [-42.5, 2.0, 56],
+  position = [-42.5, 10.0, 56],
   rotation = [0, 0, 0],
   onSpeedChange,
   targetPosRef,
@@ -41,7 +40,7 @@ export function Vehicle({
   const matchState = useGameStore((state) => state.matchState);
   const sphereRigidBodyRef = useRef<RapierRigidBody>(null);
   const visualCarRef = useRef<THREE.Group>(null);
-  const { controlsRef } = useKeyboardControls();
+  const [, get] = useKeyboardControls();
 
   // Spatial Audio Refs
   const engineAudioRef = useRef<THREE.PositionalAudio>(null);
@@ -204,11 +203,18 @@ export function Vehicle({
     const visualCar = visualCarRef.current;
     if (!sphere || !visualCar) return;
 
-    const { forward, backward, left, right, boost, handbrake, reset } = controlsRef.current;
+    // Drei KeyboardControls: get synchronous controls state
+    const { forward, backward, left, right, boost, handbrake, reset } = get();
+
+    // Console Log the Thrust (Debug verification)
+    if (get().forward) {
+      console.log('W pressed, applying thrust');
+    }
 
     // Reset vehicle on 'R' key to upright position above track
     if (reset) {
-      sphere.setTranslation({ x: spawnPos.current[0], y: 1.5, z: spawnPos.current[2] }, true);
+      sphere.wakeUp();
+      sphere.setTranslation({ x: spawnPos.current[0], y: spawnPos.current[1], z: spawnPos.current[2] }, true);
       sphere.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
       sphere.setLinvel({ x: 0, y: 0, z: 0 }, true);
       sphere.setAngvel({ x: 0, y: 0, z: 0 }, true);
@@ -258,8 +264,11 @@ export function Vehicle({
     const impulse = IMPULSE_MULTIPLIER * boostMult * delta;
 
     if (forward) {
+      // Ensure sphereRigidBodyRef.current.wakeUp() is called so Rapier doesn't put sphere to sleep
+      sphere.wakeUp();
       sphere.applyImpulse({ x: dirX * impulse, y: 0, z: dirZ * impulse }, true);
     } else if (backward) {
+      sphere.wakeUp();
       const reverseImpulse = IMPULSE_MULTIPLIER * 0.5 * delta;
       sphere.applyImpulse({ x: -dirX * reverseImpulse, y: 0, z: -dirZ * reverseImpulse }, true);
     }
@@ -318,12 +327,12 @@ export function Vehicle({
       let targetVolume = 0.35;
 
       if (matchState === 'countdown') {
-        const isRevving = controlsRef.current.forward;
-        targetPitch = isRevving ? (controlsRef.current.boost ? 2.25 : 1.9) : 0.8;
+        const isRevving = forward;
+        targetPitch = isRevving ? (boost ? 2.25 : 1.9) : 0.8;
         targetVolume = isRevving ? 0.85 : 0.35;
       } else {
         targetPitch = THREE.MathUtils.clamp(0.75 + (speedMph / 120) * 1.45, 0.75, 2.35);
-        const isThrottling = controlsRef.current.forward || controlsRef.current.backward;
+        const isThrottling = forward || backward;
         targetVolume = isThrottling
           ? THREE.MathUtils.clamp(0.45 + (speedMph / 120) * 0.45, 0.45, 0.95)
           : THREE.MathUtils.clamp(0.25 + (speedMph / 120) * 0.25, 0.25, 0.5);
@@ -338,7 +347,7 @@ export function Vehicle({
 
     // Skid Audio on heavy slide / handbrake
     if (skidAudioRef.current) {
-      const isHandbrakeSlide = controlsRef.current.handbrake && speedMs > 3.0;
+      const isHandbrakeSlide = handbrake && speedMs > 3.0;
       const rightX = Math.cos(yawRef.current);
       const rightZ = -Math.sin(yawRef.current);
       const latSpeed = Math.abs(linvel.x * rightX + linvel.z * rightZ);

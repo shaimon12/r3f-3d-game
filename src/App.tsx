@@ -1,6 +1,13 @@
 import { Suspense, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { Environment, Sky, ContactShadows, BakeShadows } from '@react-three/drei';
+import {
+  Environment,
+  Sky,
+  ContactShadows,
+  BakeShadows,
+  KeyboardControls,
+  type KeyboardControlsEntry,
+} from '@react-three/drei';
 import { Physics } from '@react-three/rapier';
 import * as THREE from 'three';
 import { Ground } from './components/canvas/Ground';
@@ -15,6 +22,20 @@ import { LoadingScreen } from './components/ui/LoadingScreen';
 import { CountdownOverlay } from './components/ui/CountdownOverlay';
 import { useGameStore } from './stores/useGameStore';
 import './App.css';
+
+/**
+ * Official Drei Keyboard Controls mapping.
+ * Binds both code (KeyW) and key ('w', 'W') for fail-safe cross-browser input resolution.
+ */
+export const keyboardMap: KeyboardControlsEntry[] = [
+  { name: 'forward', keys: ['ArrowUp', 'KeyW', 'w', 'W'] },
+  { name: 'backward', keys: ['ArrowDown', 'KeyS', 's', 'S'] },
+  { name: 'left', keys: ['ArrowLeft', 'KeyA', 'a', 'A'] },
+  { name: 'right', keys: ['ArrowRight', 'KeyD', 'd', 'D'] },
+  { name: 'boost', keys: ['ShiftLeft', 'ShiftRight', 'Shift'] },
+  { name: 'handbrake', keys: ['Space'] },
+  { name: 'reset', keys: ['KeyR', 'r', 'R'] },
+];
 
 /**
  * Timer tick loop running inside the R3F render pipeline to advance
@@ -69,10 +90,10 @@ export function App() {
   const miniMapMarkerRef = useRef<SVGGElement>(null);
 
   // Shared reactive state ref for vehicle position, orientation, and velocity
-  // Explicitly set initial spawn coordinates slightly above the track (Y = 2.0)
-  // so it drops safely onto the pavement only after the track collider exists.
+  // The Drop Test: Spawn 10 meters above the track starting line (Y = 10.0)
+  // to prove the rigid body is active and not stuck in the ground
   const vehicleStateRef = useRef<VehicleState>({
-    position: new THREE.Vector3(-42.5, 2.0, 56),
+    position: new THREE.Vector3(-42.5, 10.0, 56),
     quaternion: new THREE.Quaternion(),
     speedMph: 0,
     collisionShake: 0,
@@ -83,101 +104,103 @@ export function App() {
   };
 
   return (
-    <div className="canvas-container">
-      {/* HTML Loading Screen Overlay: Remains active until all .glb assets and colliders fully load */}
-      <LoadingScreen />
+    <KeyboardControls map={keyboardMap}>
+      <div className="canvas-container">
+        {/* HTML Loading Screen Overlay: Remains active until all .glb assets and colliders fully load */}
+        <LoadingScreen />
 
-      {/* Pre-Race Countdown State Machine Overlay: Displays traffic lights and '3, 2, 1, GO!' */}
-      <CountdownOverlay />
+        {/* Pre-Race Countdown State Machine Overlay: Displays traffic lights and '3, 2, 1, GO!' */}
+        <CountdownOverlay />
 
-      {/* Sleek, Modern HTML Overlay for Lap Counter, Millisecond Timer, Speedometer & GPS Mini-Map */}
-      <HUD
-        cameraMode={cameraMode}
-        onToggleCamera={toggleCameraMode}
-        markerRef={miniMapMarkerRef}
-      />
+        {/* Sleek, Modern HTML Overlay for Lap Counter, Millisecond Timer, Speedometer & GPS Mini-Map */}
+        <HUD
+          cameraMode={cameraMode}
+          onToggleCamera={toggleCameraMode}
+          markerRef={miniMapMarkerRef}
+        />
 
-      {/* 3D WebGL Canvas with Optimized DPR ([1, 1.5]) and High-Performance GPU Profile */}
-      <Canvas
-        shadows
-        camera={{ position: [-42.5, 4.5, 64], fov: 52 }}
-        dpr={[1, 1.5]}
-        gl={{
-          powerPreference: 'high-performance',
-          antialias: true,
-          stencil: false,
-          depth: true,
-        }}
-      >
-        {/* React Suspense Boundary wrapping the entire 3D scene */}
-        <Suspense fallback={null}>
-          {/* Render-loop Timer Driver */}
-          <TimerLoop />
+        {/* 3D WebGL Canvas with Optimized DPR ([1, 1.5]) and High-Performance GPU Profile */}
+        <Canvas
+          shadows
+          camera={{ position: [-42.5, 14.0, 68], fov: 52 }}
+          dpr={[1, 1.5]}
+          gl={{
+            powerPreference: 'high-performance',
+            antialias: true,
+            stencil: false,
+            depth: true,
+          }}
+        >
+          {/* React Suspense Boundary wrapping the entire 3D scene */}
+          <Suspense fallback={null}>
+            {/* Render-loop Timer Driver */}
+            <TimerLoop />
 
-          {/* Real-time Mini-Map Driver updating 2D SVG arrow position & heading in useFrame */}
-          <MiniMapDriver markerRef={miniMapMarkerRef} vehicleStateRef={vehicleStateRef} />
+            {/* Real-time Mini-Map Driver updating 2D SVG arrow position & heading in useFrame */}
+            <MiniMapDriver markerRef={miniMapMarkerRef} vehicleStateRef={vehicleStateRef} />
 
-          {/* Realistic Sunset HDRI Environment & Reflections */}
-          <Environment background preset="sunset" />
+            {/* Realistic Sunset HDRI Environment & Reflections */}
+            <Environment background preset="sunset" />
 
-          {/* Atmosphere & Sky enhancement */}
-          <Sky
-            sunPosition={[140, 25, -60]}
-            turbidity={8}
-            rayleigh={4}
-            mieCoefficient={0.005}
-            mieDirectionalG={0.8}
-          />
-
-          {/* Directional Sun Light with reduced 1024x1024 shadow map resolution */}
-          <Lights directionalIntensity={1.8} />
-
-          {/* Static Track Contact Shadows: rendered once and cached on GPU via frames={1} */}
-          <ContactShadows
-            position={[0, 0.02, 0]}
-            opacity={0.75}
-            scale={220}
-            blur={2.0}
-            far={25}
-            resolution={512}
-            frames={1}
-            color="#000000"
-          />
-
-          {/* Contact Shadows directly under the moving Sports Car */}
-          <VehicleContactShadow vehicleStateRef={vehicleStateRef} />
-
-          {/* Cinematic Follow-Camera using lerp to trail smoothly behind & above */}
-          <CameraController mode={cameraMode} vehicleStateRef={vehicleStateRef} />
-
-          {/* Rapier Physics Simulation with variable timeStep and boosted solver precision */}
-          <Physics
-            gravity={[0, -9.81, 0]}
-            timeStep="vary"
-            numSolverIterations={20}
-            {...({ numPositionIterations: 20 } as any)}
-          >
-            {/* 500x500 Ground Plane with 4 Invisible Perimeter Boundary Walls */}
-            <Ground size={[500, 500]} color="#141820" gridColor="#2a3444" />
-
-            {/* Professional Formula 1 Grand Prix Circuit with Continuous Tire Barriers */}
-            {/* Wrap static track elements in Drei BakeShadows component to optimize the rendering pipeline */}
-            <BakeShadows />
-            <Track />
-
-            {/* Three Invisible Rigid Body Sensor Checkpoints to Track Valid Laps */}
-            <Checkpoints />
-
-            {/* Aerodynamic Sports Car dropping safely from Y = 2.0 onto track pavement */}
-            <Vehicle
-              position={[-42.5, 2.0, 56]}
-              onSpeedChange={(mph) => setSpeedMph(mph)}
-              vehicleStateRef={vehicleStateRef}
+            {/* Atmosphere & Sky enhancement */}
+            <Sky
+              sunPosition={[140, 25, -60]}
+              turbidity={8}
+              rayleigh={4}
+              mieCoefficient={0.005}
+              mieDirectionalG={0.8}
             />
-          </Physics>
-        </Suspense>
-      </Canvas>
-    </div>
+
+            {/* Directional Sun Light with reduced 1024x1024 shadow map resolution */}
+            <Lights directionalIntensity={1.8} />
+
+            {/* Static Track Contact Shadows: rendered once and cached on GPU via frames={1} */}
+            <ContactShadows
+              position={[0, 0.02, 0]}
+              opacity={0.75}
+              scale={220}
+              blur={2.0}
+              far={25}
+              resolution={512}
+              frames={1}
+              color="#000000"
+            />
+
+            {/* Contact Shadows directly under the moving Sports Car */}
+            <VehicleContactShadow vehicleStateRef={vehicleStateRef} />
+
+            {/* Cinematic Follow-Camera using lerp to trail smoothly behind & above */}
+            <CameraController mode={cameraMode} vehicleStateRef={vehicleStateRef} />
+
+            {/* Rapier Physics Simulation with variable timeStep and boosted solver precision */}
+            <Physics
+              gravity={[0, -9.81, 0]}
+              timeStep="vary"
+              numSolverIterations={20}
+              {...({ numPositionIterations: 20 } as any)}
+            >
+              {/* 500x500 Ground Plane with 4 Invisible Perimeter Boundary Walls */}
+              <Ground size={[500, 500]} color="#141820" gridColor="#2a3444" />
+
+              {/* Professional Formula 1 Grand Prix Circuit with Continuous Tire Barriers */}
+              {/* Wrap static track elements in Drei BakeShadows component to optimize the rendering pipeline */}
+              <BakeShadows />
+              <Track />
+
+              {/* Three Invisible Rigid Body Sensor Checkpoints to Track Valid Laps */}
+              <Checkpoints />
+
+              {/* The Drop Test: Spawns 10 meters above track starting line, drops & bounces on asphalt */}
+              <Vehicle
+                position={[-42.5, 10.0, 56]}
+                onSpeedChange={(mph) => setSpeedMph(mph)}
+                vehicleStateRef={vehicleStateRef}
+              />
+            </Physics>
+          </Suspense>
+        </Canvas>
+      </div>
+    </KeyboardControls>
   );
 }
 
