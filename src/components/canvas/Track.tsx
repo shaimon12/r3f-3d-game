@@ -70,8 +70,10 @@ export function Track() {
       </RigidBody>
 
       {/* =========================================================================
-          THICK INVISIBLE PERIMETER CONCRETE WALL BUMPERS
-          Massive 10m-thick physical concrete walls that the car cannot skip through
+          TIGHT OUTER PERIMETER BUMPERS
+          Only placed tightly on the extreme outer X/Z bounds of the track bounding box.
+          Height is kept low (Y in [0, 4]) to eliminate any sky/ceiling blockage.
+          No diagonal colliders and none spanning the center [0, y, 0].
          ========================================================================= */}
       <RigidBody
         name="wall"
@@ -80,20 +82,14 @@ export function Track() {
         friction={0.6}
         restitution={0.2}
       >
-        {/* North Perimeter Wall (+Z) */}
-        <CuboidCollider name="wall" args={[110, 10, 5]} position={[20, 5, 119]} />
-        {/* South Perimeter Wall (-Z) */}
-        <CuboidCollider name="wall" args={[110, 10, 5]} position={[20, 5, -119]} />
-        {/* West Perimeter Wall (-X) */}
-        <CuboidCollider name="wall" args={[5, 10, 130]} position={[-60, 5, 0]} />
-        {/* East Perimeter Wall (+X) */}
-        <CuboidCollider name="wall" args={[5, 10, 130]} position={[100, 5, 0]} />
-
-        {/* Diagonal Corner Bumpers */}
-        <CuboidCollider name="wall" args={[25, 10, 5]} position={[95, 5, 110]} rotation={[0, -Math.PI / 4, 0]} />
-        <CuboidCollider name="wall" args={[25, 10, 5]} position={[-50, 5, 105]} rotation={[0, Math.PI / 4, 0]} />
-        <CuboidCollider name="wall" args={[25, 10, 5]} position={[-45, 5, -105]} rotation={[0, -Math.PI / 4, 0]} />
-        <CuboidCollider name="wall" args={[25, 10, 5]} position={[85, 5, -105]} rotation={[0, Math.PI / 4, 0]} />
+        {/* North Perimeter Wall (+Z: outer edge beyond max Z = 114) */}
+        <CuboidCollider name="wall" args={[76, 2, 2]} position={[20, 2, 118]} />
+        {/* South Perimeter Wall (-Z: outer edge beyond min Z = -114) */}
+        <CuboidCollider name="wall" args={[76, 2, 2]} position={[20, 2, -118]} />
+        {/* West Perimeter Wall (-X: outer edge beyond min X = -55) */}
+        <CuboidCollider name="wall" args={[2, 2, 118]} position={[-58, 2, 0]} />
+        {/* East Perimeter Wall (+X: outer edge beyond max X = 95) */}
+        <CuboidCollider name="wall" args={[2, 2, 118]} position={[98, 2, 0]} />
       </RigidBody>
     </>
   );

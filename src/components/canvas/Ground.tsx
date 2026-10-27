@@ -36,8 +36,14 @@ export function Ground({
         position={[0, 0.005, 0]}
       />
 
-      {/* 2. Four invisible boundary walls around 500x500 world perimeter */}
+      {/* 2. Safety ground floor and four invisible boundary walls around 500x500 world perimeter */}
       <RigidBody name="wall" type="fixed" colliders={false} friction={0.6} restitution={0.2}>
+        {/* Sub-surface ground floor beneath asphalt (spanning Y in [-1.0, 0.0]) */}
+        <CuboidCollider
+          name="ground-floor"
+          args={[halfW, 0.5, halfD]}
+          position={[0, -0.5, 0]}
+        />
         {/* North Wall (+Z) */}
         <CuboidCollider
           name="boundary-wall"

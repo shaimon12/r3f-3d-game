@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import { useGLTF, PositionalAudio, useKeyboardControls } from '@react-three/drei';
 import {
   RigidBody,
+  BallCollider,
   type RapierRigidBody,
   type CollisionEnterPayload,
 } from '@react-three/rapier';
@@ -372,13 +373,13 @@ export function Vehicle({
 
   return (
     <>
-      {/* 1. Invisible Arcade Physics Sphere Body */}
+      {/* 1. Invisible Arcade Physics Sphere Body (strictly type="dynamic") */}
       <RigidBody
         ref={sphereRigidBodyRef}
         name="vehicle"
         position={position}
         rotation={rotation}
-        colliders="ball"
+        colliders={false}
         type="dynamic"
         canSleep={false}
         ccd={true}
@@ -386,10 +387,7 @@ export function Vehicle({
         angularDamping={2}
         onCollisionEnter={handleCollision}
       >
-        <mesh visible={false}>
-          <sphereGeometry args={[SPHERE_RADIUS, 16, 16]} />
-          <meshBasicMaterial />
-        </mesh>
+        <BallCollider args={[SPHERE_RADIUS]} />
       </RigidBody>
 
       {/* 2. Decoupled Visuals: 3D car model independent in scene, oriented & positioned in useFrame */}
