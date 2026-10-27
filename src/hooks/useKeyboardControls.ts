@@ -25,6 +25,19 @@ const keyMap: Record<string, keyof VehicleControls> = {
   KeyR: 'reset',
 };
 
+function resolveAction(e: KeyboardEvent): keyof VehicleControls | undefined {
+  if (keyMap[e.code]) return keyMap[e.code];
+  const k = e.key ? e.key.toLowerCase() : '';
+  if (k === 'w' || k === 'arrowup') return 'forward';
+  if (k === 's' || k === 'arrowdown') return 'backward';
+  if (k === 'a' || k === 'arrowleft') return 'left';
+  if (k === 'd' || k === 'arrowright') return 'right';
+  if (k === ' ' || k === 'spacebar') return 'handbrake';
+  if (k === 'shift') return 'boost';
+  if (k === 'r') return 'reset';
+  return undefined;
+}
+
 const initialControls: VehicleControls = {
   forward: false,
   backward: false,
@@ -46,11 +59,11 @@ export function useKeyboardControls() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Prevent scrolling when using arrow keys or space in the game
-      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) || e.key === ' ') {
         e.preventDefault();
       }
 
-      const action = keyMap[e.code];
+      const action = resolveAction(e);
       if (action) {
         controlsRef.current[action] = true;
         setControls((prev) => (prev[action] ? prev : { ...prev, [action]: true }));
@@ -58,7 +71,7 @@ export function useKeyboardControls() {
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      const action = keyMap[e.code];
+      const action = resolveAction(e);
       if (action) {
         controlsRef.current[action] = false;
         setControls((prev) => (!prev[action] ? prev : { ...prev, [action]: false }));

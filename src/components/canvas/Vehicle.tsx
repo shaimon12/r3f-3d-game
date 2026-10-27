@@ -29,7 +29,7 @@ const _targetPos = new THREE.Vector3();
 // - Impulse Multiplier: 220 (tuned for 4.19kg Rapier sphere against linearDamping=1, reaching ~110 mph)
 const SPHERE_RADIUS = 1.0;
 const WHEEL_RADIUS = 0.34;
-const IMPULSE_MULTIPLIER = 220;
+const IMPULSE_MULTIPLIER = 3000;
 
 export function Vehicle({
   position = [-42.5, 2.0, 56],
@@ -220,58 +220,58 @@ export function Vehicle({
     const linvel = sphere.linvel();
     const currentSpeed = Math.hypot(linvel.x, linvel.z);
 
-    // Immobilize during pre-race countdown
-    if (matchState === 'countdown') {
-      sphere.setLinvel({ x: 0, y: linvel.y, z: 0 }, true);
-      sphere.setAngvel({ x: 0, y: 0, z: 0 }, true);
-    } else {
-      // 1. Steering: update yaw based on A / D input
-      let steerInput = 0;
-      if (left) steerInput += 1;
-      if (right) steerInput -= 1;
-
-      steerAngleRef.current = THREE.MathUtils.lerp(
-        steerAngleRef.current,
-        steerInput * 0.45,
-        Math.min(1.0, delta * 10.0)
-      );
-
-      const turnSensitivity = 2.4;
-      yawRef.current += steerInput * turnSensitivity * delta;
-
-      // 2. Simple Force: use applyImpulse to push the sphere forward when 'W' is pressed
-      const yaw = yawRef.current;
-      const fwdX = -Math.sin(yaw);
-      const fwdZ = -Math.cos(yaw);
-      const rightX = Math.cos(yaw);
-      const rightZ = -Math.sin(yaw);
-
-      const boostMult = boost ? 1.4 : 1.0;
-      const fwdSpeed = linvel.x * fwdX + linvel.z * fwdZ;
-
-      if (forward) {
-        // Push the sphere forward: input * IMPULSE_MULTIPLIER * delta
-        const impulse = IMPULSE_MULTIPLIER * boostMult * delta;
-        sphere.applyImpulse({ x: fwdX * impulse, y: 0, z: fwdZ * impulse }, true);
-      } else if (backward) {
-        // Active brake if rolling forward, else reverse
-        if (fwdSpeed > 1.0) {
-          const brakeImpulse = 280 * delta;
-          sphere.applyImpulse({ x: -fwdX * brakeImpulse, y: 0, z: -fwdZ * brakeImpulse }, true);
-        } else {
-          const revImpulse = 100 * delta;
-          sphere.applyImpulse({ x: -fwdX * revImpulse, y: 0, z: -fwdZ * revImpulse }, true);
-        }
-      }
-
-      // 3. Lateral grip: counteract sideways slide so sphere tracks like tires on asphalt
-      const latSpeed = linvel.x * rightX + linvel.z * rightZ;
-      const gripFactor = handbrake ? 0.05 : 0.25;
-      sphere.applyImpulse(
-        { x: -rightX * latSpeed * gripFactor, y: 0, z: -rightZ * latSpeed * gripFactor },
-        true
-      );
+    // If forward key is pressed during pre-race countdown, start racing immediately
+    if (forward && matchState === 'countdown') {
+      useGameStore.getState().setMatchState('racing');
     }
+
+    // 1. Steering: update vehicle heading yaw based on A / D input
+    let steerInput = 0;
+    if (left) steerInput += 1;
+    if (right) steerInput -= 1;
+
+    steerAngleRef.current = THREE.MathUtils.lerp(
+      steerAngleRef.current,
+      steerInput * 0.45,
+      Math.min(1.0, delta * 10.0)
+    );
+
+    const turnSensitivity = 2.8;
+    yawRef.current += steerInput * turnSensitivity * delta;
+
+    // Ensure visual car rotation successfully updates when steering left and right
+    // so the forward vector actually changes direction
+    visualCar.rotation.y = yawRef.current;
+    visualCar.updateMatrixWorld();
+
+    // 2. Fix the Direction Math:
+    // Inside useFrame, calculate the exact forward vector by creating a new THREE.Vector3(0, 0, -1)
+    // and applying the visual car's current rotation (.applyQuaternion(visualCar.quaternion)).
+    // Extract the X and Z values from this new vector.
+    const forwardVector = new THREE.Vector3(0, 0, -1).applyQuaternion(visualCar.quaternion);
+    const dirX = forwardVector.x;
+    const dirZ = forwardVector.z;
+
+    // 3. Massively Increase Thrust:
+    // Because we are multiplying by delta (~0.016), IMPULSE_MULTIPLIER is set to 3000 to overcome friction
+    const boostMult = boost ? 1.4 : 1.0;
+    const impulse = IMPULSE_MULTIPLIER * boostMult * delta;
+
+    if (forward) {
+      sphere.applyImpulse({ x: dirX * impulse, y: 0, z: dirZ * impulse }, true);
+    } else if (backward) {
+      const reverseImpulse = IMPULSE_MULTIPLIER * 0.5 * delta;
+      sphere.applyImpulse({ x: -dirX * reverseImpulse, y: 0, z: -dirZ * reverseImpulse }, true);
+    }
+
+    // 4. Lateral tire grip: counteract sideways slide so the sphere tracks along heading
+    const rightVector = new THREE.Vector3(1, 0, 0).applyQuaternion(visualCar.quaternion);
+    const latSpeed = linvel.x * rightVector.x + linvel.z * rightVector.z;
+    const gripFactor = handbrake ? 0.05 : 0.25;
+    sphere.applyImpulse(
+      { x: -rightVector.x * latSpeed * gripFactor, y: 0, z: -rightVector.z * latSpeed * gripFactor },
+      true
+    );
 
     // Telemetry updates
     const speedMs = currentSpeed;
