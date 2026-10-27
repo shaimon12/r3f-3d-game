@@ -50,10 +50,10 @@ function dampVec3(current: THREE.Vector3, target: THREE.Vector3, lambda: number,
 // - Car Model Box: width 1.98m, height 1.18m, length 4.50m (tires bottom out at local y = -0.43)
 // - Track Model Box: width 150.3m, height 8.5m, length 228.4m
 // - Sphere Radius: 1.5m (thickened collider physically resists passing through thin trimesh walls)
-// - Impulse Multiplier: 1500 (boosted thrust for natural 120-150 mph cruising speed)
+// - Impulse Multiplier: 4000 (re-balanced thrust against linearDamping=4 for buttery smooth ~120 mph top speed)
 const SPHERE_RADIUS = 1.5;
 const WHEEL_RADIUS = 0.34;
-const IMPULSE_MULTIPLIER = 1500;
+const IMPULSE_MULTIPLIER = 4000;
 
 export function Vehicle({
   position = [-42.5, 10.0, 56],
@@ -297,11 +297,6 @@ export function Vehicle({
     const currentVel = sphere.linvel();
     const linvel = currentVel;
 
-    // Kill Upward Bounces: If trimesh seams launch the sphere (vel.y > 2), slam it down immediately
-    if (currentVel.y > 2) {
-      sphere.applyImpulse({ x: 0, y: -500, z: 0 }, true);
-    }
-
     // 4. Lateral tire grip: counteract sideways slide so turning responds instantly along heading
     const rightX = Math.cos(yawRef.current);
     const rightZ = -Math.sin(yawRef.current);
@@ -484,9 +479,10 @@ export function Vehicle({
         type="dynamic"
         canSleep={false}
         ccd={true}
+        {...({ interpolate: true } as any)}
         enabledRotations={[false, true, false]}
         gravityScale={6}
-        linearDamping={2}
+        linearDamping={4}
         angularDamping={2}
         friction={0}
         frictionCombineRule={CoefficientCombineRule.Min}
