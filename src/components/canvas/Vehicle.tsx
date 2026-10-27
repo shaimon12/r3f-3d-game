@@ -26,10 +26,12 @@ const _targetPos = new THREE.Vector3();
 // - Car Model Box: width 1.98m, height 1.18m, length 4.50m (tires bottom out at local y = -0.43)
 // - Track Model Box: width 150.3m, height 8.5m, length 228.4m
 // - Sphere Radius: 1.0m (2.0m diameter perfectly matches car's 1.98m width so it hits walls properly)
-// - Impulse Multiplier: 3000 (overcomes static friction & linearDamping=1)
+// - Impulse Multiplier: 1000 (punchy, responsive acceleration without runaway velocity)
+// - Speed Governor: 60 m/s (~134 mph safe cap to prevent trimesh wall tunneling)
 const SPHERE_RADIUS = 1.0;
 const WHEEL_RADIUS = 0.34;
-const IMPULSE_MULTIPLIER = 3000;
+const IMPULSE_MULTIPLIER = 1000;
+const MAX_SAFE_SPEED_MS = 60;
 
 export function Vehicle({
   position = [-42.5, 10.0, 56],
@@ -224,8 +226,10 @@ export function Vehicle({
       return;
     }
 
-    const linvel = sphere.linvel();
-    const currentSpeed = Math.hypot(linvel.x, linvel.z);
+    const vel = sphere.linvel();
+    const linvel = vel;
+    const velMagnitude = Math.hypot(vel.x, vel.y, vel.z);
+    const currentSpeed = Math.hypot(vel.x, vel.z);
 
     // If forward key is pressed during pre-race countdown, start racing immediately
     if (forward && matchState === 'countdown') {
@@ -259,19 +263,24 @@ export function Vehicle({
     const dirX = forwardVector.x;
     const dirZ = forwardVector.z;
 
-    // 3. Massively Increase Thrust:
-    // Because we are multiplying by delta (~0.016), IMPULSE_MULTIPLIER is set to 3000 to overcome friction
+    // 3. Dialed Back Thrust & Speed Governor:
+    // IMPULSE_MULTIPLIER is scaled to 1000 for punchy, controllable acceleration
     const boostMult = boost ? 1.4 : 1.0;
     const impulse = IMPULSE_MULTIPLIER * boostMult * delta;
 
     if (forward) {
       // Ensure sphereRigidBodyRef.current.wakeUp() is called so Rapier doesn't put sphere to sleep
       sphere.wakeUp();
-      sphere.applyImpulse({ x: dirX * impulse, y: 0, z: dirZ * impulse }, true);
+      // Speed Governor: If magnitude exceeds safe limit (60 m/s), do NOT apply any more forward impulse
+      if (velMagnitude < MAX_SAFE_SPEED_MS) {
+        sphere.applyImpulse({ x: dirX * impulse, y: 0, z: dirZ * impulse }, true);
+      }
     } else if (backward) {
       sphere.wakeUp();
       const reverseImpulse = IMPULSE_MULTIPLIER * 0.5 * delta;
-      sphere.applyImpulse({ x: -dirX * reverseImpulse, y: 0, z: -dirZ * reverseImpulse }, true);
+      if (velMagnitude < 20) {
+        sphere.applyImpulse({ x: -dirX * reverseImpulse, y: 0, z: -dirZ * reverseImpulse }, true);
+      }
     }
 
     // 4. Lateral tire grip: counteract sideways slide so the sphere tracks along heading

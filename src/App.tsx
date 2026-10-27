@@ -176,7 +176,6 @@ export function App() {
             <Physics
               gravity={[0, -9.81, 0]}
               timeStep="vary"
-              debug
               numSolverIterations={20}
               {...({ numPositionIterations: 20 } as any)}
             >
