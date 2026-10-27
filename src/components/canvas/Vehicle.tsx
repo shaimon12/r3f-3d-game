@@ -46,7 +46,7 @@ export function Vehicle({
   const matchState = useGameStore((state) => state.matchState);
   const sphereRigidBodyRef = useRef<RapierRigidBody>(null);
   const visualCarRef = useRef<THREE.Group>(null);
-  const { world } = useRapier();
+  const { world, colliderStates, rigidBodyStates } = useRapier();
   const { controlsRef } = useKeyboardControls();
 
   // Spatial Audio Refs
@@ -56,6 +56,9 @@ export function Vehicle({
 
   // Crash cooldown tracker to prevent multi-contact frame stuttering
   const lastCrashTimestamp = useRef(0);
+
+  // Foolproof Ground-Raycast boundary system: tracks last confirmed safe position on the track floor
+  const lastSafePosition = useRef(new THREE.Vector3(position[0], position[1], position[2]));
 
   // Vehicle driving & orientation tracking refs
   const yawRef = useRef(rotation[1] || 0);
@@ -297,6 +300,7 @@ export function Vehicle({
       steerAngleRef.current = 0;
       forwardSpeedRef.current = 0;
       lateralSpeedRef.current = 0;
+      lastSafePosition.current.set(spawnPos.current[0], 2.0, spawnPos.current[2]);
       return;
     }
 
@@ -513,15 +517,23 @@ export function Vehicle({
       onSpeedChange(speedMph, speedMs);
     }
 
-    // 4. Update Loop: Downward Raycast & Ground Normal Hugging
-    const spherePos = sphere.translation();
-    const rayOrigin = { x: spherePos.x, y: spherePos.y + 0.5, z: spherePos.z };
+    // =========================================================================
+    // FOOLPROOF GROUND-RAYCAST BOUNDARY SYSTEM
+    // =========================================================================
+    // Fire a Rapier raycast strictly straight DOWN from the sphere's center.
+    // If the raycast successfully hits the track floor, update lastSafePosition to current position.
+    // If the downward raycast MISSES the floor (meaning car clipped through wall and is off track),
+    // instantly apply setLinvel({x:0, y:0, z:0}) to kill all momentum,
+    // and use setTranslation(lastSafePosition) to teleport the car back onto the track.
+    let spherePos = sphere.translation();
+    const rayOrigin = { x: spherePos.x, y: spherePos.y, z: spherePos.z };
     const rayDir = { x: 0, y: -1, z: 0 };
-    const ray = new RAPIER.Ray(rayOrigin, rayDir);
-    const maxToi = SPHERE_RADIUS * 2 + 3.0;
+    const downRay = new RAPIER.Ray(rayOrigin, rayDir);
+    const maxDownDistance = 8.0;
+
     const hit = world.castRayAndGetNormal(
-      ray,
-      maxToi,
+      downRay,
+      maxDownDistance,
       true,
       undefined,
       undefined,
@@ -529,8 +541,62 @@ export function Vehicle({
       sphere
     );
 
-    let groundY = spherePos.y - SPHERE_RADIUS;
+    let isTrackFloor = false;
     if (hit && hit.normal && hit.normal.y > 0.35) {
+      const cState = colliderStates?.get(hit.collider.handle);
+      const cName = (cState?.object?.name || '').toLowerCase();
+      const rb = hit.collider.parent();
+      const rbState = rb ? rigidBodyStates?.get(rb.handle) : undefined;
+      const rbName = (rbState?.object?.name || '').toLowerCase();
+
+      // Ensure hit is not a vertical wall, barrier, bumper, checkpoint, or ground
+      const isWallOrObstacle =
+        cName.includes('wall') ||
+        cName.includes('barrier') ||
+        cName.includes('bumper') ||
+        cName.includes('checkpoint') ||
+        cName.includes('ground') ||
+        rbName.includes('wall') ||
+        rbName.includes('barrier') ||
+        rbName.includes('bumper') ||
+        rbName.includes('checkpoint') ||
+        rbName.includes('ground');
+
+      if (!isWallOrObstacle) {
+        isTrackFloor = true;
+      }
+    }
+
+    if (hit && isTrackFloor) {
+      // Raycast successfully hit the track floor: update lastSafePosition to current position
+      lastSafePosition.current.set(spherePos.x, spherePos.y, spherePos.z);
+    } else {
+      // Downward raycast MISSES the floor: car has clipped through the wall and is off track!
+      // Instantly kill all momentum and teleport the car back onto the track.
+      sphere.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      sphere.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      sphere.setTranslation(
+        {
+          x: lastSafePosition.current.x,
+          y: lastSafePosition.current.y,
+          z: lastSafePosition.current.z,
+        },
+        true
+      );
+      forwardSpeedRef.current = 0;
+      lateralSpeedRef.current = 0;
+
+      // Update local spherePos reference to the safe position for immediate visual sync
+      spherePos = {
+        x: lastSafePosition.current.x,
+        y: lastSafePosition.current.y,
+        z: lastSafePosition.current.z,
+      };
+    }
+
+    // 4. Update Loop: Visual Car Ground Normal Hugging
+    let groundY = spherePos.y - SPHERE_RADIUS;
+    if (hit && isTrackFloor && hit.normal && hit.normal.y > 0.35) {
       groundY = rayOrigin.y - hit.timeOfImpact;
       _groundNormal.set(hit.normal.x, hit.normal.y, hit.normal.z).normalize();
     } else {

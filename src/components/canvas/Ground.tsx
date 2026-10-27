@@ -25,24 +25,16 @@ export function Ground({
 
   return (
     <>
-      {/* 1. Ground floor collider with explicit name for collision filtering */}
-      <RigidBody name="ground" type="fixed" colliders={false} friction={1.0} restitution={0.1}>
-        <CuboidCollider
-          name="ground"
-          args={[halfW, floorThickness / 2, halfD]}
-          position={[0, -floorThickness / 2, 0]}
-        />
-        {/* Visual ground surface - shadows disabled on distant 500x500 scenery to eliminate GPU lag */}
-        <mesh name="ground" receiveShadow={false} position={[0, -floorThickness / 2, 0]}>
-          <boxGeometry args={[width, floorThickness, depth]} />
-          <meshStandardMaterial color={color} roughness={0.9} metalness={0.1} />
-        </mesh>
-        {/* Prototyping reference grid */}
-        <gridHelper
-          args={[width, width / 2, gridColor, '#12161f']}
-          position={[0, 0.005, 0]}
-        />
-      </RigidBody>
+      {/* 1. Visual ground surface - purely visual scenery so track road is the sole physical floor */}
+      <mesh receiveShadow={false} position={[0, -floorThickness / 2, 0]}>
+        <boxGeometry args={[width, floorThickness, depth]} />
+        <meshStandardMaterial color={color} roughness={0.9} metalness={0.1} />
+      </mesh>
+      {/* Prototyping reference grid */}
+      <gridHelper
+        args={[width, width / 2, gridColor, '#12161f']}
+        position={[0, 0.005, 0]}
+      />
 
       {/* 2. Four invisible boundary walls around 500x500 world perimeter */}
       <RigidBody name="wall" type="fixed" colliders={false} friction={0.6} restitution={0.2}>
