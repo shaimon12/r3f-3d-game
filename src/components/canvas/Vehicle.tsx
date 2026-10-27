@@ -4,6 +4,7 @@ import { useGLTF, PositionalAudio, useKeyboardControls } from '@react-three/drei
 import {
   RigidBody,
   BallCollider,
+  useRapier,
   type RapierRigidBody,
   type CollisionEnterPayload,
 } from '@react-three/rapier';
@@ -21,6 +22,10 @@ export interface VehicleProps {
 
 // Pre-allocated static vectors outside render loop to eliminate per-frame GC
 const _targetPos = new THREE.Vector3();
+const _localLeft = new THREE.Vector3(-1, 0, 0);
+const _localRight = new THREE.Vector3(1, 0, 0);
+const _rayDirLeft = new THREE.Vector3();
+const _rayDirRight = new THREE.Vector3();
 
 // Bounding Box-adjusted physics constants based on exact 3D model dimensions:
 // - Car Model Box: width 1.98m, height 1.18m, length 4.50m (tires bottom out at local y = -0.43)
@@ -40,6 +45,7 @@ export function Vehicle({
   targetPosRef,
   vehicleStateRef,
 }: VehicleProps) {
+  const { world, rapier } = useRapier();
   const matchState = useGameStore((state) => state.matchState);
   const sphereRigidBodyRef = useRef<RapierRigidBody>(null);
   const visualCarRef = useRef<THREE.Group>(null);
@@ -204,7 +210,7 @@ export function Vehicle({
   useFrame((_, delta) => {
     const sphere = sphereRigidBodyRef.current;
     const visualCar = visualCarRef.current;
-    if (!sphere || !visualCar) return;
+    if (!sphere || !visualCar || !world || !rapier) return;
 
     // Drei KeyboardControls: get synchronous controls state
     const { forward, backward, left, right, boost, handbrake, reset } = get();
@@ -292,6 +298,54 @@ export function Vehicle({
       true
     );
 
+    // =========================================================================
+    // 5. ACTIVE RAYCAST BUMPERS (THE FORCEFIELD)
+    // Fire horizontal Rapier raycasts from center of sphere strictly local Left & Right.
+    // If either detects a wall hit < 1.2m, instantly apply massive lateral repulsion.
+    // =========================================================================
+    const spherePos = sphere.translation();
+
+    // Local Left and Right horizontal world directions
+    _rayDirLeft.copy(_localLeft).applyQuaternion(visualCar.quaternion);
+    _rayDirLeft.y = 0;
+    _rayDirLeft.normalize();
+
+    _rayDirRight.copy(_localRight).applyQuaternion(visualCar.quaternion);
+    _rayDirRight.y = 0;
+    _rayDirRight.normalize();
+
+    const maxRayDist = 1.2; // Sphere radius is 1.0m, buffer is 0.2m
+
+    const leftRay = new rapier.Ray(spherePos, _rayDirLeft);
+    const hitLeft = world.castRay(leftRay, maxRayDist, true, undefined, undefined, undefined, sphere);
+
+    const rightRay = new rapier.Ray(spherePos, _rayDirRight);
+    const hitRight = world.castRay(rightRay, maxRayDist, true, undefined, undefined, undefined, sphere);
+
+    if (hitLeft && !hitLeft.collider.isSensor() && hitLeft.timeOfImpact < 1.2) {
+      // Wall detected on local Left -> shove forcefully to the Right
+      const penetration = Math.max(0.01, 1.2 - hitLeft.timeOfImpact);
+      const vIntoWall = Math.max(0, linvel.x * _rayDirLeft.x + linvel.z * _rayDirLeft.z);
+      const repulsionStrength = 80 + penetration * 250 + vIntoWall * 5;
+      sphere.wakeUp();
+      sphere.applyImpulse(
+        { x: _rayDirRight.x * repulsionStrength, y: 0, z: _rayDirRight.z * repulsionStrength },
+        true
+      );
+    }
+
+    if (hitRight && !hitRight.collider.isSensor() && hitRight.timeOfImpact < 1.2) {
+      // Wall detected on local Right -> shove forcefully to the Left
+      const penetration = Math.max(0.01, 1.2 - hitRight.timeOfImpact);
+      const vIntoWall = Math.max(0, linvel.x * _rayDirRight.x + linvel.z * _rayDirRight.z);
+      const repulsionStrength = 80 + penetration * 250 + vIntoWall * 5;
+      sphere.wakeUp();
+      sphere.applyImpulse(
+        { x: _rayDirLeft.x * repulsionStrength, y: 0, z: _rayDirLeft.z * repulsionStrength },
+        true
+      );
+    }
+
     // Telemetry updates
     const speedMs = currentSpeed;
     const speedMph = Math.round(speedMs * 2.237);
@@ -302,7 +356,6 @@ export function Vehicle({
     // =========================================================================
     // VISUAL CAR DECOUPLING: match position & heading yaw cleanly
     // =========================================================================
-    const spherePos = sphere.translation();
     // Offset Y so wheel bottoms (at local y = -0.43) touch ground flush with sphere bottom (radius 1.0)
     const visualY = spherePos.y - 0.57;
     visualCar.position.set(spherePos.x, visualY, spherePos.z);
@@ -394,9 +447,11 @@ export function Vehicle({
         ccd={true}
         linearDamping={1}
         angularDamping={2}
+        restitution={0.5}
+        friction={0.1}
         onCollisionEnter={handleCollision}
       >
-        <BallCollider args={[SPHERE_RADIUS]} />
+        <BallCollider args={[SPHERE_RADIUS]} restitution={0.5} friction={0.1} />
       </RigidBody>
 
       {/* 2. Decoupled Visuals: 3D car model independent in scene, oriented & positioned in useFrame */}

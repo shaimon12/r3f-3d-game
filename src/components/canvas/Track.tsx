@@ -58,8 +58,8 @@ export function Track() {
         name="track-road"
         type="fixed"
         colliders={false}
-        friction={1.2}
-        restitution={0.1}
+        friction={0.1}
+        restitution={0.5}
       >
         {/* Road surface trimesh: smooth drivable asphalt, no thin barrier meshes */}
         {roadMesh && (
@@ -79,8 +79,8 @@ export function Track() {
         name="wall"
         type="fixed"
         colliders={false}
-        friction={0.6}
-        restitution={0.2}
+        friction={0.1}
+        restitution={0.5}
       >
         {/* North Perimeter Wall (+Z: outer edge beyond max Z = 114) */}
         <CuboidCollider name="wall" args={[76, 2, 2]} position={[20, 2, 118]} />
