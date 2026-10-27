@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useGLTF, BakeShadows } from '@react-three/drei';
 import { RigidBody, MeshCollider, CuboidCollider } from '@react-three/rapier';
 import * as THREE from 'three';
@@ -11,6 +11,18 @@ import * as THREE from 'three';
  */
 export function Track() {
   const { scene } = useGLTF('/models/track.glb');
+
+  // The Blindness Fix: calculate and console.log the exact bounding box size of the Track model
+  useEffect(() => {
+    const box = new THREE.Box3().setFromObject(scene);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    console.log('🏁 [BOUNDING BOX] Track Model (Track.tsx):', {
+      min: box.min.toArray(),
+      max: box.max.toArray(),
+      size: size.toArray(),
+    });
+  }, [scene]);
   const { visualScene, roadMesh } = useMemo(() => {
     const s = scene.clone(true);
     s.traverse((child) => {
