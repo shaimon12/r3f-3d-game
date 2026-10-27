@@ -8,7 +8,7 @@ import {
   KeyboardControls,
   type KeyboardControlsEntry,
 } from '@react-three/drei';
-import { Physics, Debug } from '@react-three/rapier';
+import { Physics } from '@react-three/rapier';
 import * as THREE from 'three';
 import { Ground } from './components/canvas/Ground';
 import { Lights } from './components/canvas/Lights';
@@ -180,9 +180,6 @@ export function App() {
               numSolverIterations={20}
               {...({ numPositionIterations: 20 } as any)}
             >
-              {/* Turn on X-Ray: Debug wireframes for all hidden colliders */}
-              <Debug />
-
               {/* 500x500 Ground Plane with 4 Invisible Perimeter Boundary Walls */}
               <Ground size={[500, 500]} color="#141820" gridColor="#2a3444" />
 
